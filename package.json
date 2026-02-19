@@ -5,7 +5,8 @@
   "description": "Tree-structured knowledge portal over flat chat conversations",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
+    "dev": "DB_PATH=data/dev.db node --watch server/index.js",
+    "seed": "DB_PATH=data/dev.db node scripts/seed.js",
     "test": "node --test core/**/*.test.js"
   },
   "dependencies": {
