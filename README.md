@@ -25,10 +25,24 @@ Navigation strategy is pluggable — swap `DefaultNavigationStrategy` with your 
 
 ```bash
 npm install
-npm run dev     # starts with --watch
+cp .env.example .env
+npm run dev
 ```
 
-Open http://localhost:3000
+Open http://localhost:3001
+
+## Ingestion Options
+
+### A) Bot polling (limited visibility in groups)
+```bash
+npm run poll
+```
+
+### B) User-account MTProto sync (recommended; sees human + bot messages)
+```bash
+npm run mtproto:once   # first login + one sync
+npm run mtproto:loop   # continuous sync
+```
 
 ## API
 

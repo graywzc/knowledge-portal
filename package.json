@@ -7,10 +7,15 @@
     "start": "node server/index.js",
     "dev": "DB_PATH=data/dev.db node --watch server/index.js",
     "seed": "DB_PATH=data/dev.db node scripts/seed.js",
+    "poll": "node scripts/poll.js",
+    "mtproto:once": "node scripts/mtproto-sync.js once",
+    "mtproto:loop": "node scripts/mtproto-sync.js loop",
     "test": "node --test core/**/*.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",
-    "express": "^4.18.0"
+    "express": "^4.18.0",
+    "input": "^1.0.1",
+    "telegram": "^2.26.22"
   }
 }
