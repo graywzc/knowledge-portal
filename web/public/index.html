@@ -8,52 +8,54 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; background: #f5f5f5; }
 
-    /* Sidebar: tree view */
-    #sidebar { width: 260px; background: #1a1a2e; color: #eee; padding: 16px; overflow-y: auto; }
-    #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 12px; }
+    #sidebar { width: 280px; background: #1a1a2e; color: #eee; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+    #sidebar select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; font-size: 13px; }
+
     .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
     .tree-node.active { background: rgba(100,140,255,0.3); }
     .tree-children { margin-left: 16px; border-left: 1px solid #333; }
 
-    /* Main: messages */
     #main { flex: 1; display: flex; flex-direction: column; }
     #layer-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; font-weight: 600; }
     #messages { flex: 1; overflow-y: auto; padding: 20px; }
-    .msg { max-width: 600px; margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+    .msg { max-width: 650px; margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
     .msg.self { background: #d1e7ff; margin-left: auto; }
     .msg.other { background: #fff; border: 1px solid #ddd; }
     .msg .meta { font-size: 11px; color: #888; margin-top: 4px; }
+    .msg .branch-badge { display: inline-block; background: #4a6cf7; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; cursor: pointer; }
 
-    /* Input */
-    #input-area { padding: 12px 20px; background: #fff; border-top: 1px solid #ddd; display: flex; gap: 8px; }
-    #input-area input { flex: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
-    #input-area select { padding: 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 13px; }
-    #input-area button { padding: 8px 16px; background: #4a6cf7; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
   </style>
 </head>
 <body>
   <div id="sidebar">
-    <h2>Layers</h2>
-    <div id="tree"></div>
+    <div>
+      <h2>Source</h2>
+      <select id="source-select"><option value="">Select source...</option></select>
+    </div>
+    <div>
+      <h2>Channel</h2>
+      <select id="channel-select"><option value="">Select channel...</option></select>
+    </div>
+    <div>
+      <h2>Layers</h2>
+      <div id="tree"></div>
+    </div>
   </div>
   <div id="main">
-    <div id="layer-header">Layer A</div>
-    <div id="messages"></div>
-    <div id="input-area">
-      <select id="sender-select">
-        <option value="self">Self</option>
-        <option value="other">Other</option>
-      </select>
-      <input id="msg-input" placeholder="Type a message..." />
-      <select id="reply-select"><option value="">No reply</option></select>
-      <button id="send-btn">Send</button>
+    <div id="layer-header">Knowledge Portal</div>
+    <div id="messages">
+      <div id="empty-state">Select a source and channel to view messages</div>
     </div>
   </div>
 
   <script>
-    let currentLayer = 'A';
-    let msgCounter = 0;
+    let currentSource = '';
+    let currentChannel = '';
+    let currentLayerId = 'A';
+    let viewState = null;
 
     async function api(method, path, body) {
       const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -62,12 +64,33 @@
       return res.json();
     }
 
-    async function refresh() {
-      const tree = await api('GET', '/tree');
-      const current = await api('GET', '/current');
-      currentLayer = current.currentLayerId;
-      renderTree(tree);
-      await showLayer(currentLayer);
+    async function loadSources() {
+      const sources = await api('GET', '/sources');
+      const sel = document.getElementById('source-select');
+      sel.innerHTML = '<option value="">Select source...</option>';
+      sources.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s; opt.textContent = s;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function loadChannels(source) {
+      const channels = await api('GET', `/sources/${source}/channels`);
+      const sel = document.getElementById('channel-select');
+      sel.innerHTML = '<option value="">Select channel...</option>';
+      channels.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function loadView(source, channel) {
+      viewState = await api('GET', `/sources/${encodeURIComponent(source)}/channels/${encodeURIComponent(channel)}/view`);
+      currentLayerId = viewState.currentLayerId;
+      renderTree(viewState.tree);
+      showLayer(currentLayerId);
     }
 
     function renderTree(node, container) {
@@ -75,13 +98,14 @@
         container = document.getElementById('tree');
         container.innerHTML = '';
       }
+      if (!node) return;
       const div = document.createElement('div');
-      div.className = 'tree-node' + (node.id === currentLayer ? ' active' : '');
+      div.className = 'tree-node' + (node.id === currentLayerId ? ' active' : '');
       div.textContent = `Layer ${node.id} (${node.messageCount})`;
       div.onclick = (e) => { e.stopPropagation(); showLayer(node.id); };
       container.appendChild(div);
 
-      if (node.children.length) {
+      if (node.children && node.children.length) {
         const childContainer = document.createElement('div');
         childContainer.className = 'tree-children';
         node.children.forEach(c => renderTree(c, childContainer));
@@ -89,60 +113,68 @@
       }
     }
 
-    async function showLayer(id) {
-      const layer = await api('GET', `/layers/${id}`);
-      currentLayer = id;
-      document.getElementById('layer-header').textContent = `Layer ${id}` +
-        (layer.parentLayerId ? ` (child of ${layer.parentLayerId})` : ' (root)');
+    function showLayer(layerId) {
+      if (!viewState) return;
+      currentLayerId = layerId;
+      const layers = viewState.state.layers;
+      const layer = layers[layerId];
+      if (!layer) return;
+
+      document.getElementById('layer-header').textContent =
+        `Layer ${layerId}` + (layer.parentLayerId ? ` → child of ${layer.parentLayerId}` : ' (root)');
 
       const msgDiv = document.getElementById('messages');
       msgDiv.innerHTML = '';
-      const replySelect = document.getElementById('reply-select');
-      replySelect.innerHTML = '<option value="">No reply</option>';
 
-      layer.messages.forEach((m, i) => {
+      if (layer.messages.length === 0) {
+        msgDiv.innerHTML = '<div id="empty-state">No messages in this layer</div>';
+        return;
+      }
+
+      // Find which messages have child branches
+      const branchPoints = {};
+      for (const child of (layer.children || [])) {
+        if (!branchPoints[child.branchFromMessageId]) branchPoints[child.branchFromMessageId] = [];
+        branchPoints[child.branchFromMessageId].push(child.layerId);
+      }
+
+      layer.messages.forEach((m) => {
         const el = document.createElement('div');
         el.className = `msg ${m.sender}`;
-        el.innerHTML = `${m.content}<div class="meta">${m.id} · ${m.sender}${m.replyToId ? ' · reply to ' + m.replyToId : ''}</div>`;
+        let html = escapeHtml(m.content);
+        html += `<div class="meta">${m.sender}`;
+        if (m.replyToId) html += ` · reply to ${m.replyToId}`;
+        if (branchPoints[m.id]) {
+          branchPoints[m.id].forEach(childLayerId => {
+            html += `<span class="branch-badge" onclick="showLayer('${childLayerId}')">→ ${childLayerId}</span>`;
+          });
+        }
+        html += '</div>';
+        el.innerHTML = html;
         msgDiv.appendChild(el);
-
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = `↩ ${m.id} (${m.sender})`;
-        replySelect.appendChild(opt);
       });
 
-      // Also refresh tree highlighting
-      const tree = await api('GET', '/tree');
-      renderTree(tree);
+      // Re-render tree to update active highlight
+      if (viewState.tree) renderTree(viewState.tree);
     }
 
-    document.getElementById('send-btn').onclick = async () => {
-      const input = document.getElementById('msg-input');
-      const content = input.value.trim();
-      if (!content) return;
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
 
-      const sender = document.getElementById('sender-select').value;
-      const replyToId = document.getElementById('reply-select').value || null;
-
-      await api('POST', '/messages', {
-        id: `msg-${++msgCounter}`,
-        sender,
-        replyToId,
-        content,
-        timestamp: Date.now(),
-      });
-
-      input.value = '';
-      document.getElementById('reply-select').value = '';
-      await refresh();
+    document.getElementById('source-select').onchange = async (e) => {
+      currentSource = e.target.value;
+      if (currentSource) await loadChannels(currentSource);
     };
 
-    document.getElementById('msg-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('send-btn').click();
-    });
+    document.getElementById('channel-select').onchange = async (e) => {
+      currentChannel = e.target.value;
+      if (currentSource && currentChannel) await loadView(currentSource, currentChannel);
+    };
 
-    refresh();
+    loadSources();
   </script>
 </body>
 </html>

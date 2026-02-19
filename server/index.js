@@ -1,71 +1,103 @@
 const express = require('express');
 const path = require('path');
+const { Database } = require('../db/Database');
 const { TreeNavigator } = require('../core/TreeNavigator');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../data/portal.db');
+
+// Ensure data dir exists
+const fs = require('fs');
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
+const db = new Database(DB_PATH);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../web/public')));
 
-// In-memory store (swap with DB adapter later)
-let navigator = new TreeNavigator();
+// --- Helper: build tree view from DB messages ---
+
+function buildTree(source, channel, selfUserId) {
+  const messages = db.getMessages(source, channel);
+  const nav = new TreeNavigator();
+
+  for (const msg of messages) {
+    nav.addMessage({
+      id: msg.id,
+      sender: msg.sender_role === 'self' ? 'self' : 'other',
+      replyToId: msg.reply_to_id || null,
+      content: msg.content,
+      timestamp: msg.timestamp,
+    });
+  }
+
+  return nav;
+}
 
 // --- API Routes ---
 
-/** Add a message */
-app.post('/api/messages', (req, res) => {
-  const { id, sender, replyToId, content, timestamp } = req.body;
-  if (!id || !sender || !content) {
-    return res.status(400).json({ error: 'id, sender, content required' });
-  }
-  const result = navigator.addMessage({
-    id,
-    sender,
-    replyToId: replyToId || null,
-    content,
-    timestamp: timestamp || Date.now(),
-  });
-  res.json(result);
+/** List sources */
+app.get('/api/sources', (req, res) => {
+  res.json(db.getSources());
 });
 
-/** Get a layer */
-app.get('/api/layers/:id', (req, res) => {
-  const layer = navigator.getLayer(req.params.id);
+/** List channels for a source */
+app.get('/api/sources/:source/channels', (req, res) => {
+  res.json(db.getChannels(req.params.source));
+});
+
+/** Get tree for a source+channel */
+app.get('/api/sources/:source/channels/:channel/tree', (req, res) => {
+  const nav = buildTree(req.params.source, req.params.channel);
+  res.json(nav.getTree());
+});
+
+/** Get a layer for a source+channel */
+app.get('/api/sources/:source/channels/:channel/layers/:layerId', (req, res) => {
+  const nav = buildTree(req.params.source, req.params.channel);
+  const layer = nav.getLayer(req.params.layerId);
   if (!layer) return res.status(404).json({ error: 'Layer not found' });
   res.json(layer);
 });
 
-/** Get the tree structure */
-app.get('/api/tree', (req, res) => {
-  res.json(navigator.getTree());
+/** Get all layers for a source+channel (full view) */
+app.get('/api/sources/:source/channels/:channel/view', (req, res) => {
+  const nav = buildTree(req.params.source, req.params.channel);
+  res.json({
+    tree: nav.getTree(),
+    currentLayerId: nav.getCurrentLayerId(),
+    state: nav.exportState(),
+  });
 });
 
-/** Get current layer */
-app.get('/api/current', (req, res) => {
-  const id = navigator.getCurrentLayerId();
-  res.json({ currentLayerId: id, layer: navigator.getLayer(id) });
-});
-
-/** Export state */
-app.get('/api/state', (req, res) => {
-  res.json(navigator.exportState());
-});
-
-/** Import state */
-app.post('/api/state', (req, res) => {
-  try {
-    navigator = TreeNavigator.fromState(req.body);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ error: e.message });
+/** Ingest messages (generic) */
+app.post('/api/ingest', (req, res) => {
+  const messages = Array.isArray(req.body) ? req.body : [req.body];
+  let count = 0;
+  for (const msg of messages) {
+    if (!msg.id || !msg.source || !msg.channel || !msg.senderId || !msg.content || !msg.timestamp) {
+      continue;
+    }
+    db.insertMessage(msg);
+    count++;
   }
+  res.json({ ingested: count });
 });
 
-/** Reset */
-app.post('/api/reset', (req, res) => {
-  navigator = new TreeNavigator();
-  res.json({ ok: true });
+/** Ingest Telegram messages */
+app.post('/api/ingest/telegram', (req, res) => {
+  const { TelegramAdapter } = require('../ingestion/TelegramAdapter');
+  const selfUserId = req.query.selfUserId || req.body.selfUserId;
+  const adapter = new TelegramAdapter(db, { selfUserId });
+  const messages = req.body.messages || (Array.isArray(req.body) ? req.body : [req.body]);
+  const ingested = adapter.ingestBatch(messages);
+  res.json({ ingested: ingested.length });
+});
+
+/** Raw messages for a channel (for debugging) */
+app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
+  res.json(db.getMessages(req.params.source, req.params.channel));
 });
 
 app.listen(PORT, () => {
