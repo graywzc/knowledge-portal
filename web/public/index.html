@@ -162,8 +162,8 @@
       if (!node) return;
       const div = document.createElement('div');
       div.className = 'tree-node' + (node.id === currentLayerId ? ' active' : '');
-      div.textContent = `${node.id} · ${layerTitle(node.id)}`;
-      div.title = `Layer ${node.id} (${node.messageCount} msgs)`;
+      div.textContent = layerTitle(node.id);
+      div.title = `${layerTitle(node.id)} (${node.messageCount} msgs)`;
       div.onclick = (e) => { e.stopPropagation(); showLayer(node.id); };
       container.appendChild(div);
 
@@ -182,8 +182,7 @@
       const layer = layers[layerId];
       if (!layer) return;
 
-      document.getElementById('layer-header').textContent =
-        `Layer ${layerId}` + (layer.parentLayerId ? ` → child of ${layer.parentLayerId}` : ' (root)');
+      document.getElementById('layer-header').textContent = layerTitle(layerId);
 
       const msgDiv = document.getElementById('messages');
       msgDiv.innerHTML = '';
