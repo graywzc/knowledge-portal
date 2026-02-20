@@ -5,7 +5,7 @@
   "description": "Tree-structured knowledge portal over flat chat conversations",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "DB_PATH=data/dev.db node --watch server/index.js",
+    "dev": "DB_PATH=data/dev.db node --env-file=.env --watch server/index.js",
     "seed": "DB_PATH=data/dev.db node scripts/seed.js",
     "poll": "node scripts/poll.js",
     "mtproto:once": "node scripts/mtproto-sync.js once",
