@@ -75,6 +75,8 @@ class TelegramAdapter {
       id: `tg:${chatId}:${tgMsg.message_id}`,
       source: 'telegram',
       channel,
+      chatId,
+      topicId,
       senderId,
       senderName,
       senderRole,
@@ -86,6 +88,7 @@ class TelegramAdapter {
         chat_id: chatId,
         message_id: tgMsg.message_id,
         message_thread_id: tgMsg.message_thread_id || null,
+        reply_to_msg_id: tgMsg.reply_to_message?.message_id || null,
       },
     };
   }

@@ -35,5 +35,8 @@ if (fs.existsSync(envPath)) {
     await ingestor.runLoop({ intervalMs: Number(process.env.TG_SYNC_INTERVAL_MS || 5000) });
   } else {
     await ingestor.syncOnce({ backfillLimit: Number(process.env.TG_BACKFILL_LIMIT || 500) });
+    // one-shot mode should terminate cleanly
+    await ingestor.client.disconnect();
+    process.exit(0);
   }
 })();

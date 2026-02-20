@@ -68,7 +68,7 @@ class TreeNavigator {
    *
    * @param {object} msg
    * @param {string} msg.id - unique message id
-   * @param {string} msg.sender - "self" or "other"
+   * @param {string} msg.sender - "self" | "other" | "bot"
    * @param {string|null} msg.replyToId - id of message being replied to, or null
    * @param {*} msg.content - message content (opaque to this module)
    * @param {number} msg.timestamp - epoch ms
@@ -183,8 +183,9 @@ class DefaultNavigationStrategy {
   /**
    * Default rules:
    * 1. No reply → append to current layer
-   * 2. Reply to other's message → branch into new sub-layer
-   * 3. Reply to own message → jump back to that layer, append
+   * 2. Bot reply → stay in the same layer as the replied-to ask
+   * 3. Reply to other's message → branch into new sub-layer
+   * 4. Reply to own message → jump back to that layer, append
    */
   decide(navigator, msg) {
     if (!msg.replyToId) {
@@ -199,6 +200,11 @@ class DefaultNavigationStrategy {
 
     const repliedLayer = navigator.getLayer(loc.layerId);
     const repliedMsg = repliedLayer.messages[loc.position];
+
+    if (msg.sender === 'bot') {
+      // Bot answers should stay in the same layer as the ask they reply to.
+      return { type: 'jump', toLayerId: loc.layerId };
+    }
 
     if (repliedMsg.sender !== msg.sender) {
       // Reply to other's message → branch

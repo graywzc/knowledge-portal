@@ -85,6 +85,16 @@ describe('TreeNavigator', () => {
     assert.strictEqual(nav2.getLayer('B').messages.length, 1);
   });
 
+  it('bot replies stay in the same layer as the replied ask', () => {
+    const nav = new TreeNavigator();
+    nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'a1', timestamp: 1 });
+    nav.addMessage({ id: '2', sender: 'bot', replyToId: '1', content: 'a2', timestamp: 2 });
+
+    assert.strictEqual(nav.getCurrentLayerId(), 'A');
+    assert.strictEqual(nav.getLayer('A').messages.length, 2);
+    assert.strictEqual(nav.getLayer('A').children.length, 0);
+  });
+
   it('getTree returns correct structure', () => {
     const nav = new TreeNavigator();
     nav.addMessage({ id: '1', sender: 'other', replyToId: null, content: 'a1', timestamp: 1 });

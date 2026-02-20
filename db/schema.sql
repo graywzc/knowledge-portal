@@ -4,7 +4,9 @@
 CREATE TABLE IF NOT EXISTS messages (
   id            TEXT PRIMARY KEY,        -- unique message id (source-prefixed, e.g. "tg:12345")
   source        TEXT NOT NULL,           -- data source identifier (e.g. "telegram", "slack")
-  channel       TEXT NOT NULL,           -- channel/topic/chat id within the source
+  channel       TEXT NOT NULL,           -- legacy scope key (topic_id if present else chat_id)
+  chat_id       TEXT,                    -- container/chat id (e.g. telegram group id)
+  topic_id      TEXT,                    -- optional sub-thread/topic id inside chat
   sender_id     TEXT NOT NULL,           -- who sent it (source-specific user id)
   sender_name   TEXT,                    -- display name (denormalized for convenience)
   sender_role   TEXT NOT NULL DEFAULT 'user',  -- "self" or "user" or "bot" etc.

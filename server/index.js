@@ -32,10 +32,22 @@ function buildTree(source, channel) {
     viewerId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
   }
 
+  const botIds = new Set(
+    String(process.env.PORTAL_BOT_USER_IDS || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+  );
+
   for (const msg of messages) {
+    const senderId = String(msg.sender_id);
+    const sender = senderId === String(viewerId)
+      ? 'self'
+      : (botIds.has(senderId) ? 'bot' : 'other');
+
     nav.addMessage({
       id: msg.id,
-      sender: String(msg.sender_id) === String(viewerId) ? 'self' : 'other',
+      sender,
       replyToId: msg.reply_to_id || null,
       content: msg.content,
       timestamp: msg.timestamp,

@@ -60,22 +60,37 @@ class TelegramUserIngestor {
     const chatId = String(msg.chatId || this.chatId);
     const fromId = msg.senderId ? String(msg.senderId) : 'unknown';
     const replyToMsgId = msg.replyTo?.replyToMsgId || null;
+    const forumTopic = Boolean(msg.replyTo?.forumTopic);
+    const topicId = msg.replyTo?.replyToTopId
+      ? String(msg.replyTo.replyToTopId)
+      : (forumTopic && replyToMsgId ? String(replyToMsgId) : null);
 
     return {
       id: `tg:${chatId}:${msg.id}`,
       source: 'telegram',
-      channel: this.topicId ? String(this.topicId) : chatId,
+      channel: topicId || chatId,
+      chatId,
+      topicId,
       senderId: fromId,
       senderName: msg.sender?.firstName || msg.sender?.username || null,
       senderRole: 'user',
       replyToId: replyToMsgId ? `tg:${chatId}:${replyToMsgId}` : null,
       content: msg.message || '[media]',
       contentType: msg.message ? 'text' : 'other',
-      timestamp: (msg.date ? msg.date.getTime() : Date.now()),
+      timestamp: (() => {
+        if (!msg.date) return Date.now();
+        // gramjs may return Date, unix seconds, or string depending on context/version
+        if (msg.date instanceof Date) return msg.date.getTime();
+        if (typeof msg.date === 'number') return msg.date > 1e12 ? msg.date : msg.date * 1000;
+        const parsed = new Date(msg.date).getTime();
+        return Number.isFinite(parsed) ? parsed : Date.now();
+      })(),
       rawMeta: {
         id: msg.id,
         chat_id: chatId,
-        topic_id: this.topicId,
+        topic_id: topicId,
+        forum_topic: forumTopic,
+        reply_to_msg_id: replyToMsgId,
         reply_to_top_id: msg.replyTo?.replyToTopId || null,
       },
     };
@@ -87,10 +102,21 @@ class TelegramUserIngestor {
     let maxSeen = lastId;
     let ingested = 0;
 
-    for await (const msg of this.client.iterMessages(entity, { limit: backfillLimit })) {
+    // If we already have a checkpoint, ask Telegram for only newer messages via minId.
+    // This is robust across all topics in the same chat because message ids are chat-global.
+    const normalizedLimit = Number(backfillLimit);
+    const unlimitedBackfill = !Number.isFinite(normalizedLimit) || normalizedLimit <= 0;
+
+    const iterOpts = lastId
+      ? { minId: lastId, reverse: true }
+      : (unlimitedBackfill
+          ? { reverse: true }
+          : { limit: normalizedLimit, reverse: true });
+
+    for await (const msg of this.client.iterMessages(entity, iterOpts)) {
       if (!msg || !msg.id) continue;
       if (!this._inTopic(msg)) continue;
-      if (lastId && msg.id <= lastId) continue;
+      if (lastId && msg.id <= lastId) continue; // safety guard
 
       const dbMsg = this._toDbMessage(msg);
       this.db.insertMessage(dbMsg);

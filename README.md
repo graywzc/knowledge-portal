@@ -44,6 +44,9 @@ npm run mtproto:once   # first login + one sync
 npm run mtproto:loop   # continuous sync
 ```
 
+`PORTAL_VIEWER_USER_ID` controls whose perspective is treated as "self".
+`PORTAL_BOT_USER_IDS` (comma-separated Telegram user ids) marks bot senders; bot replies stay in the same layer as the ask they reply to.
+
 ## API
 
 - `POST /api/messages` — add a message `{ id, sender, replyToId?, content, timestamp? }`
