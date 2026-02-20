@@ -18,14 +18,24 @@ app.use(express.static(path.join(__dirname, '../web/public')));
 
 // --- Helper: build tree view from DB messages ---
 
-function buildTree(source, channel, selfUserId) {
+function buildTree(source, channel) {
   const messages = db.getMessages(source, channel);
   const nav = new TreeNavigator();
+
+  // Perspective user id: whose "self" rules should be used for branch/jump logic.
+  // Can be overridden by env (recommended), else defaults to the most frequent sender in channel.
+  const configuredViewerId = process.env.PORTAL_VIEWER_USER_ID || null;
+  let viewerId = configuredViewerId;
+  if (!viewerId && messages.length) {
+    const counts = new Map();
+    for (const m of messages) counts.set(m.sender_id, (counts.get(m.sender_id) || 0) + 1);
+    viewerId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
 
   for (const msg of messages) {
     nav.addMessage({
       id: msg.id,
-      sender: msg.sender_role === 'self' ? 'self' : 'other',
+      sender: String(msg.sender_id) === String(viewerId) ? 'self' : 'other',
       replyToId: msg.reply_to_id || null,
       content: msg.content,
       timestamp: msg.timestamp,
@@ -100,6 +110,6 @@ app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
   res.json(db.getMessages(req.params.source, req.params.channel));
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`knowledge-portal running on http://localhost:${PORT}`);
 });

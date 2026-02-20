@@ -29,6 +29,14 @@ class TelegramAdapter {
    * @param {string} [channelOverride] - override channel (e.g., topic id)
    */
   ingest(tgMsg, channelOverride) {
+    // Opportunistically ingest the replied-to message first when Telegram includes it.
+    // This makes threading robust even if parent messages were never seen as top-level updates
+    // (e.g., replies to old messages or messages from another bot).
+    if (tgMsg.reply_to_message) {
+      const parent = this._transform(tgMsg.reply_to_message, channelOverride);
+      if (parent) this.db.insertMessage(parent);
+    }
+
     const msg = this._transform(tgMsg, channelOverride);
     if (msg) this.db.insertMessage(msg);
     return msg;
