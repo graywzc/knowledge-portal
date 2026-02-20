@@ -4,12 +4,19 @@ Tree-structured knowledge portal over flat chat conversations.
 
 ## Architecture
 
+```mermaid
+graph TD
+  UI[web/public<br/>Web UI] --> API[server/index.js<br/>Express API]
+  API --> CORE[core/TreeNavigator.js<br/>Tree navigation engine + strategy]
+  API --> DB[(SQLite via db/Database)]
+  INGEST[ingestion/TelegramAdapter.js<br/>Telegram ingestion] --> DB
+  SCRIPTS[scripts/poll.js<br/>scripts/mtproto-sync.js] --> INGEST
 ```
-core/           — Pure logic (no UI/persistence deps). Consumable by any client.
-  TreeNavigator.js   — Tree navigation engine + pluggable strategy
-server/         — Express API server
-web/public/     — Web UI (one of potentially many UIs)
-```
+
+- `core/` — Pure logic (no UI/persistence deps), consumable by any client.
+- `server/` — Express API server.
+- `web/public/` — Web UI (one of potentially many UIs).
+- `ingestion/` + `scripts/` — Import Telegram messages into the DB.
 
 ## Navigation Rules (Default Strategy)
 
