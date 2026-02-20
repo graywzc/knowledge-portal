@@ -61,9 +61,11 @@ class TelegramUserIngestor {
     const fromId = msg.senderId ? String(msg.senderId) : 'unknown';
     const replyToMsgId = msg.replyTo?.replyToMsgId || null;
     const forumTopic = Boolean(msg.replyTo?.forumTopic);
+    const actionTopicCreate = msg.action?.className === 'MessageActionTopicCreate';
+    const actionTopicTitle = actionTopicCreate ? (msg.action?.title || null) : null;
     const topicId = msg.replyTo?.replyToTopId
       ? String(msg.replyTo.replyToTopId)
-      : (forumTopic && replyToMsgId ? String(replyToMsgId) : null);
+      : (forumTopic && replyToMsgId ? String(replyToMsgId) : (actionTopicCreate ? String(msg.id) : null));
 
     return {
       id: `tg:${chatId}:${msg.id}`,
@@ -90,6 +92,7 @@ class TelegramUserIngestor {
         chat_id: chatId,
         topic_id: topicId,
         forum_topic: forumTopic,
+        topic_title: actionTopicTitle,
         reply_to_msg_id: replyToMsgId,
         reply_to_top_id: msg.replyTo?.replyToTopId || null,
       },

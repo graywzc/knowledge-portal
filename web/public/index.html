@@ -6,7 +6,9 @@
   <title>Knowledge Portal</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; background: #f5f5f5; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; background: #f5f5f5; color: #111; }
+
+    body.dark { background: #0f1115; color: #e8eaed; }
 
     #sidebar { width: 280px; background: #1a1a2e; color: #eee; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
     #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
@@ -20,10 +22,18 @@
     #main { flex: 1; display: flex; flex-direction: column; }
     #layer-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; font-weight: 600; }
     #messages { flex: 1; overflow-y: auto; padding: 20px; }
-    .msg { max-width: 650px; margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .msg { max-width: 650px; margin-bottom: 12px; padding: 10px 14px 22px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; position: relative; }
     .msg.self { background: #d1e7ff; margin-left: auto; }
-    .msg.other { background: #fff; border: 1px solid #ddd; }
+    .msg.other, .msg.bot { background: #fff; border: 1px solid #ddd; }
     .msg .meta { font-size: 11px; color: #888; margin-top: 4px; }
+    .msg .time { position: absolute; right: 10px; bottom: 6px; font-size: 11px; color: #7a7a7a; }
+
+    body.dark #layer-header { background: #161a22; border-bottom-color: #2a2f3a; color: #e8eaed; }
+    body.dark #messages { background: #0f1115; }
+    body.dark .msg.self { background: #214a73; color: #e8eaed; }
+    body.dark .msg.other, body.dark .msg.bot { background: #1a1f29; border-color: #2f3644; color: #e8eaed; }
+    body.dark .msg .meta { color: #a0a7b4; }
+    body.dark .msg .time { color: #9aa4b2; }
     .msg .branch-badge { display: inline-block; background: #4a6cf7; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; cursor: pointer; }
 
     #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
@@ -36,8 +46,9 @@
       <select id="source-select"><option value="">Select source...</option></select>
     </div>
     <div>
-      <h2>Channel</h2>
+      <h2>Channel / Topic</h2>
       <select id="channel-select"><option value="">Select channel...</option></select>
+      <div id="topic-list" style="margin-top:8px; display:none;"></div>
     </div>
     <div>
       <h2>Layers</h2>
@@ -54,8 +65,25 @@
   <script>
     let currentSource = '';
     let currentChannel = '';
+    let currentTopicName = '';
     let currentLayerId = 'A';
     let viewState = null;
+
+    function applyThemeByTime() {
+      const h = new Date().getHours();
+      const dark = (h >= 19 || h < 7);
+      document.body.classList.toggle('dark', dark);
+    }
+
+    function formatMessageTime(ts) {
+      const d = new Date(Number(ts));
+      const now = new Date();
+      const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+      const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (sameDay) return time;
+      const date = d.toLocaleDateString([], { month: 'numeric', day: 'numeric', year: '2-digit' });
+      return `${date} ${time}`;
+    }
 
     async function api(method, path, body) {
       const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -80,10 +108,35 @@
       const sel = document.getElementById('channel-select');
       sel.innerHTML = '<option value="">Select channel...</option>';
       channels.forEach(c => {
+        const value = (typeof c === 'string') ? c : c.id;
+        const label = (typeof c === 'string') ? c : (c.name || c.id);
         const opt = document.createElement('option');
-        opt.value = c; opt.textContent = c;
+        opt.value = value; opt.textContent = label;
         sel.appendChild(opt);
       });
+
+      // For Telegram, show topic list ordered by most recent message.
+      const topicList = document.getElementById('topic-list');
+      if (source === 'telegram') {
+        const topics = await api('GET', '/telegram/topics');
+        topicList.style.display = 'block';
+        topicList.innerHTML = '';
+        topics.forEach(t => {
+          const row = document.createElement('div');
+          row.className = 'tree-node';
+          row.textContent = `${t.name} (${t.messageCount})`;
+          row.onclick = async () => {
+            currentChannel = t.id;
+            currentTopicName = t.name || '';
+            sel.value = t.id;
+            await loadView(currentSource, currentChannel);
+          };
+          topicList.appendChild(row);
+        });
+      } else {
+        topicList.style.display = 'none';
+        topicList.innerHTML = '';
+      }
     }
 
     async function loadView(source, channel) {
@@ -91,6 +144,14 @@
       currentLayerId = viewState.currentLayerId;
       renderTree(viewState.tree);
       showLayer(currentLayerId);
+    }
+
+    function layerTitle(layerId) {
+      if (layerId === 'A' && currentTopicName) return currentTopicName;
+      const layer = viewState?.state?.layers?.[layerId];
+      if (!layer || !layer.messages || layer.messages.length === 0) return `Layer ${layerId}`;
+      const first = (layer.messages[0].content || '').replace(/\s+/g, ' ').trim();
+      return first ? (first.length > 42 ? first.slice(0, 42) + '…' : first) : `Layer ${layerId}`;
     }
 
     function renderTree(node, container) {
@@ -101,7 +162,8 @@
       if (!node) return;
       const div = document.createElement('div');
       div.className = 'tree-node' + (node.id === currentLayerId ? ' active' : '');
-      div.textContent = `Layer ${node.id} (${node.messageCount})`;
+      div.textContent = `${node.id} · ${layerTitle(node.id)}`;
+      div.title = `Layer ${node.id} (${node.messageCount} msgs)`;
       div.onclick = (e) => { e.stopPropagation(); showLayer(node.id); };
       container.appendChild(div);
 
@@ -150,6 +212,7 @@
           });
         }
         html += '</div>';
+        html += `<div class="time">${formatMessageTime(m.timestamp)}</div>`;
         el.innerHTML = html;
         msgDiv.appendChild(el);
       });
@@ -171,9 +234,13 @@
 
     document.getElementById('channel-select').onchange = async (e) => {
       currentChannel = e.target.value;
+      const opt = e.target.selectedOptions && e.target.selectedOptions[0];
+      currentTopicName = opt ? opt.textContent : '';
       if (currentSource && currentChannel) await loadView(currentSource, currentChannel);
     };
 
+    applyThemeByTime();
+    setInterval(applyThemeByTime, 60 * 1000);
     loadSources();
   </script>
 </body>

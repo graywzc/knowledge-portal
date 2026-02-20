@@ -123,7 +123,7 @@ class Database {
   }
 
   /**
-   * List distinct channels for a source.
+   * List distinct channels/scopes for a source.
    */
   getChannels(source) {
     return this.db.prepare(
@@ -135,12 +135,77 @@ class Database {
   }
 
   /**
+   * List telegram topics under one chat, ordered by most recent message desc.
+   */
+  getTelegramTopics(chatId) {
+    const rows = this.db.prepare(
+      `SELECT topic_id, MAX(timestamp) AS last_ts, COUNT(*) AS msg_count
+       FROM messages
+       WHERE source='telegram' AND chat_id=? AND topic_id IS NOT NULL
+       GROUP BY topic_id
+       ORDER BY last_ts DESC`
+    ).all(String(chatId));
+
+    const titleFromMetaStmt = this.db.prepare(
+      `SELECT raw_meta FROM messages
+       WHERE source='telegram' AND chat_id=? AND topic_id=? AND raw_meta LIKE '%"topic_title"%'
+       ORDER BY timestamp ASC LIMIT 1`
+    );
+    const firstTextStmt = this.db.prepare(
+      `SELECT content FROM messages
+       WHERE source='telegram' AND chat_id=? AND topic_id=? AND content IS NOT NULL AND content != '' AND content != '[media]'
+       ORDER BY timestamp ASC LIMIT 1`
+    );
+
+    return rows.map(r => {
+      let name = null;
+
+      // 1) Prefer explicit title-like metadata if present.
+      for (const rr of titleFromMetaStmt.all(String(chatId), String(r.topic_id))) {
+        try {
+          const meta = rr.raw_meta ? JSON.parse(rr.raw_meta) : {};
+          const t = meta.topic_title || meta.forum_topic_title || null;
+          if (t && String(t).trim()) { name = String(t).trim(); break; }
+        } catch {}
+      }
+
+      // 2) Fallback: first textual message in the topic (often the seed prompt/title-ish message).
+      if (!name) {
+        const first = firstTextStmt.get(String(chatId), String(r.topic_id));
+        name = first?.content?.trim() || null;
+      }
+
+      // 3) Final fallback.
+      if (!name || name === '[media]') name = `Topic ${r.topic_id}`;
+
+      return {
+        id: String(r.topic_id),
+        name: name.length > 60 ? name.slice(0, 60) + '…' : name,
+        lastTimestamp: r.last_ts,
+        messageCount: r.msg_count,
+      };
+    });
+  }
+
+  /**
    * List distinct sources.
    */
   getSources() {
     return this.db.prepare(
       'SELECT DISTINCT source FROM messages ORDER BY source'
     ).all().map(r => r.source);
+  }
+
+  getPrimaryTelegramChatId() {
+    const row = this.db.prepare(
+      `SELECT chat_id, COUNT(*) cnt
+       FROM messages
+       WHERE source='telegram' AND chat_id IS NOT NULL
+       GROUP BY chat_id
+       ORDER BY cnt DESC
+       LIMIT 1`
+    ).get();
+    return row ? String(row.chat_id) : null;
   }
 
   close() {

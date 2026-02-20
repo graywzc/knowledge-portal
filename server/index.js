@@ -69,6 +69,13 @@ app.get('/api/sources/:source/channels', (req, res) => {
   res.json(db.getChannels(req.params.source));
 });
 
+/** List telegram topics (ordered by most recent) */
+app.get('/api/telegram/topics', (req, res) => {
+  const chatId = req.query.chatId || process.env.TG_CHAT_ID || process.env.TELEGRAM_CHAT_ID || db.getPrimaryTelegramChatId();
+  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  res.json(db.getTelegramTopics(chatId));
+});
+
 /** Get tree for a source+channel */
 app.get('/api/sources/:source/channels/:channel/tree', (req, res) => {
   const nav = buildTree(req.params.source, req.params.channel);
