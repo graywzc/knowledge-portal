@@ -202,7 +202,15 @@ class DefaultNavigationStrategy {
     const repliedMsg = repliedLayer.messages[loc.position];
 
     if (msg.sender === 'bot') {
-      // Bot answers should stay in the same layer as the ask they reply to.
+      // Telegram bots in forum topics often reply to the topic starter/root message
+      // even when they are contextually answering the latest user message in a sub-layer.
+      // If bot reply target is the root anchor, keep bot in the current active layer.
+      const isRootAnchorReply = (loc.layerId === 'A' && loc.position === 0);
+      if (isRootAnchorReply && navigator.currentLayerId !== 'A') {
+        return { type: 'append' };
+      }
+
+      // Otherwise keep bot in the layer of the replied message.
       return { type: 'jump', toLayerId: loc.layerId };
     }
 
