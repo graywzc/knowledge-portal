@@ -64,10 +64,16 @@ class Database {
       INSERT INTO messages (id, source, channel, chat_id, topic_id, sender_id, sender_name, sender_role, reply_to_id, content, content_type, timestamp, raw_meta)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
-        channel   = COALESCE(excluded.channel, messages.channel),
-        chat_id   = COALESCE(messages.chat_id, excluded.chat_id),
-        topic_id  = COALESCE(messages.topic_id, excluded.topic_id),
-        raw_meta  = COALESCE(excluded.raw_meta, messages.raw_meta)
+        channel      = COALESCE(excluded.channel, messages.channel),
+        chat_id      = COALESCE(messages.chat_id, excluded.chat_id),
+        topic_id     = COALESCE(messages.topic_id, excluded.topic_id),
+        sender_name  = COALESCE(excluded.sender_name, messages.sender_name),
+        sender_role  = COALESCE(excluded.sender_role, messages.sender_role),
+        reply_to_id  = COALESCE(excluded.reply_to_id, messages.reply_to_id),
+        content      = COALESCE(excluded.content, messages.content),
+        content_type = COALESCE(excluded.content_type, messages.content_type),
+        timestamp    = COALESCE(excluded.timestamp, messages.timestamp),
+        raw_meta     = COALESCE(excluded.raw_meta, messages.raw_meta)
     `);
     const chatId = msg.chatId ? String(msg.chatId) : null;
     const topicId = (msg.topicId === null || msg.topicId === undefined || msg.topicId === '') ? null : String(msg.topicId);
