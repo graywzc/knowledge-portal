@@ -97,6 +97,11 @@
       html: false,
       linkify: true,
       breaks: true,
+      // Keep leading "#" as literal text instead of heading promotion.
+      // This is important for labels/comments like "# class_id ..." in dataset snippets.
+      }).disable(['heading', 'lheading']);
+
+    md.set({
       highlight: (str, lang) => {
         try {
           if (lang && window.hljs && hljs.getLanguage(lang)) {
@@ -285,9 +290,37 @@
       return idx >= 0 ? s.slice(idx + 1) : s;
     }
 
+    function preprocessMessageForMarkdown(text) {
+      const s = String(text || '');
+      if (!s.trim() || s.includes('```')) return s;
+
+      const lines = s.split('\n');
+      const commandStart = /^(?:\$\s*)?(?:npm|pnpm|yarn|node|python|pip|git|docker|kubectl|yolo|ffmpeg|curl|wget|cd|ls|cat|echo|export|source|make)\b/i;
+
+      let i = 0;
+      const out = [];
+      while (i < lines.length) {
+        if (commandStart.test(lines[i].trim())) {
+          const block = [];
+          while (i < lines.length && lines[i].trim() && commandStart.test(lines[i].trim())) {
+            block.push(lines[i]);
+            i++;
+          }
+          out.push('```shell');
+          out.push(...block);
+          out.push('```');
+          continue;
+        }
+        out.push(lines[i]);
+        i++;
+      }
+      return out.join('\n');
+    }
+
     function renderRichContent(text) {
       try {
-        const raw = md.render(String(text || ''));
+        const pre = preprocessMessageForMarkdown(text);
+        const raw = md.render(pre);
         return DOMPurify.sanitize(raw);
       } catch (_) {
         return escapeHtml(String(text || ''));
