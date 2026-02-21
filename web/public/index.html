@@ -21,6 +21,8 @@
 
     #main { flex: 1; display: flex; flex-direction: column; }
     #layer-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; font-weight: 600; }
+    #layer-header .back-link { display: inline-block; margin-left: 10px; font-weight: 500; font-size: 12px; color: #4a6cf7; cursor: pointer; text-decoration: none; }
+    #layer-header .back-link:hover { text-decoration: underline; }
     #messages { flex: 1; overflow-y: auto; padding: 20px; }
     .msg { max-width: 650px; margin-bottom: 12px; padding: 10px 14px 22px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; position: relative; }
     .msg.self { background: #d1e7ff; margin-left: auto; }
@@ -30,6 +32,7 @@
     .msg .chat-id { position: absolute; left: 10px; bottom: 6px; font-size: 11px; color: #7a7a7a; opacity: 0.9; }
 
     body.dark #layer-header { background: #161a22; border-bottom-color: #2a2f3a; color: #e8eaed; }
+    body.dark #layer-header .back-link { color: #8fb0ff; }
     body.dark #messages { background: #0f1115; }
     body.dark .msg.self { background: #214a73; color: #e8eaed; }
     body.dark .msg.other, body.dark .msg.bot { background: #1a1f29; border-color: #2f3644; color: #e8eaed; }
@@ -177,14 +180,20 @@
       }
     }
 
-    function showLayer(layerId) {
+    function showLayer(layerId, focusMessageId = null) {
       if (!viewState) return;
       currentLayerId = layerId;
       const layers = viewState.state.layers;
       const layer = layers[layerId];
       if (!layer) return;
 
-      document.getElementById('layer-header').textContent = layerTitle(layerId);
+      const header = document.getElementById('layer-header');
+      const title = layerTitle(layerId);
+      if (layer.parentLayerId && layer.branchFromMessageId) {
+        header.innerHTML = `${escapeHtml(title)} <a class="back-link" onclick="showLayer('${layer.parentLayerId}', '${layer.branchFromMessageId}')">↩ back to parent msg #${escapeHtml(getShortChatId(layer.branchFromMessageId))}</a>`;
+      } else {
+        header.textContent = title;
+      }
 
       const msgDiv = document.getElementById('messages');
       msgDiv.innerHTML = '';
@@ -204,6 +213,7 @@
       layer.messages.forEach((m) => {
         const el = document.createElement('div');
         el.className = `msg ${m.sender}`;
+        el.setAttribute('data-msg-id', m.id);
         let html = escapeHtml(m.content);
         html += `<div class="meta">${m.sender}`;
         if (m.replyToId) html += ` · reply to ${m.replyToId}`;
@@ -221,6 +231,15 @@
 
       // Re-render tree to update active highlight
       if (viewState.tree) renderTree(viewState.tree);
+
+      if (focusMessageId) {
+        const target = msgDiv.querySelector(`[data-msg-id="${focusMessageId}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.style.outline = '2px solid #4a6cf7';
+          setTimeout(() => { target.style.outline = ''; }, 1200);
+        }
+      }
     }
 
     function getShortChatId(messageId) {
