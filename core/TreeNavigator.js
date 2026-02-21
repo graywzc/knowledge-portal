@@ -201,17 +201,23 @@ class DefaultNavigationStrategy {
     const repliedLayer = navigator.getLayer(loc.layerId);
     const repliedMsg = repliedLayer.messages[loc.position];
 
+    const isRootAnchorReply = (loc.layerId === 'A' && loc.position === 0);
+
     if (msg.sender === 'bot') {
       // Telegram bots in forum topics often reply to the topic starter/root message
-      // even when they are contextually answering the latest user message in a sub-layer.
-      // If bot reply target is the root anchor, keep bot in the current active layer.
-      const isRootAnchorReply = (loc.layerId === 'A' && loc.position === 0);
+      // even when they are contextually answering the latest message in a sub-layer.
       if (isRootAnchorReply && navigator.currentLayerId !== 'A') {
         return { type: 'append' };
       }
 
       // Otherwise keep bot in the layer of the replied message.
       return { type: 'jump', toLayerId: loc.layerId };
+    }
+
+    if (msg.sender === 'self' && isRootAnchorReply && navigator.currentLayerId !== 'A') {
+      // Same forum quirk for user asks: replying to topic root is often just
+      // a transport-level thread anchor, not intent to jump back to root layer.
+      return { type: 'append' };
     }
 
     if (repliedMsg.sender !== msg.sender) {
