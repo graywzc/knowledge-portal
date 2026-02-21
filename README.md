@@ -44,6 +44,7 @@ npm run poll
 ```bash
 npm run mtproto:once   # first login + one sync
 npm run mtproto:loop   # continuous sync
+npm run mtproto:reset-last-id -- 560   # optional: move checkpoint backward/forward
 ```
 
 `PORTAL_VIEWER_USER_ID` controls whose perspective is treated as "self".

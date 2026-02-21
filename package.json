@@ -10,6 +10,7 @@
     "poll": "node scripts/poll.js",
     "mtproto:once": "node scripts/mtproto-sync.js once",
     "mtproto:loop": "node scripts/mtproto-sync.js loop",
+    "mtproto:reset-last-id": "node scripts/reset-last-id.js",
     "test": "node --test core/**/*.test.js"
   },
   "dependencies": {
