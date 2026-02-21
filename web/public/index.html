@@ -294,6 +294,12 @@
       const s = String(text || '');
       if (!s.trim() || s.includes('```')) return s;
 
+      // Preserve Telegram-style unicode/ASCII charts in a fixed-width block.
+      const chartLike = /[│┤┼╭╮╯╰╲─→]/.test(s) && /\n/.test(s);
+      if (chartLike) {
+        return `\n\`\`\`text\n${s}\n\`\`\``;
+      }
+
       const lines = s.split('\n');
       const commandStart = /^(?:\$\s*)?(?:npm|pnpm|yarn|node|python|pip|git|docker|kubectl|yolo|ffmpeg|curl|wget|cd|ls|cat|echo|export|source|make)\b/i;
 
