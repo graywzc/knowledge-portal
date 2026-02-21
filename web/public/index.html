@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Knowledge Portal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; background: #f5f5f5; color: #111; }
@@ -24,7 +25,17 @@
     #layer-header .back-link { display: inline-block; margin-left: 10px; font-weight: 500; font-size: 12px; color: #4a6cf7; cursor: pointer; text-decoration: none; }
     #layer-header .back-link:hover { text-decoration: underline; }
     #messages { flex: 1; overflow-y: auto; padding: 20px; }
-    .msg { max-width: 650px; margin-bottom: 12px; padding: 10px 14px 22px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; position: relative; }
+    .msg { max-width: 760px; margin-bottom: 12px; padding: 10px 14px 22px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; position: relative; }
+    .msg p { margin: 0 0 8px 0; }
+    .msg p:last-child { margin-bottom: 0; }
+    .msg pre { background: #0b1220; color: #dbe7ff; padding: 10px 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
+    .msg code { background: rgba(74,108,247,0.12); padding: 1px 5px; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .msg pre code { background: transparent; padding: 0; border-radius: 0; font-size: 12px; }
+    .msg table { width: 100%; border-collapse: collapse; margin: 8px 0; display: block; overflow-x: auto; }
+    .msg th, .msg td { border: 1px solid #d7dbe5; padding: 6px 8px; text-align: left; white-space: nowrap; }
+    .msg th { background: #eef2ff; }
+    .msg blockquote { border-left: 3px solid #94a3b8; padding-left: 10px; margin: 8px 0; color: #4b5563; }
+    .msg ul, .msg ol { padding-left: 20px; margin: 8px 0; }
     .msg.self { background: #d1e7ff; margin-left: auto; }
     .msg.other, .msg.bot { background: #fff; border: 1px solid #ddd; }
     .msg .meta { font-size: 11px; color: #888; margin-top: 4px; }
@@ -39,6 +50,11 @@
     body.dark .msg .meta { color: #a0a7b4; }
     body.dark .msg .time { color: #9aa4b2; }
     body.dark .msg .chat-id { color: #9aa4b2; }
+    body.dark .msg code { background: rgba(143,176,255,0.18); }
+    body.dark .msg table { color: #e8eaed; }
+    body.dark .msg th, body.dark .msg td { border-color: #3a4458; }
+    body.dark .msg th { background: #20283a; }
+    body.dark .msg blockquote { color: #b8c2d4; border-left-color: #64748b; }
     .msg .branch-badge { display: inline-block; background: #4a6cf7; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; cursor: pointer; }
 
     #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
@@ -67,12 +83,32 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/highlight.min.js"></script>
   <script>
     let currentSource = '';
     let currentChannel = '';
     let currentTopicName = '';
     let currentLayerId = 'A';
     let viewState = null;
+
+    const md = window.markdownit({
+      html: false,
+      linkify: true,
+      breaks: true,
+      highlight: (str, lang) => {
+        try {
+          if (lang && window.hljs && hljs.getLanguage(lang)) {
+            return `<pre><code class="hljs language-${lang}">${hljs.highlight(str, { language: lang }).value}</code></pre>`;
+          }
+          if (window.hljs) {
+            return `<pre><code class="hljs">${hljs.highlightAuto(str).value}</code></pre>`;
+          }
+        } catch (_) {}
+        return `<pre><code>${escapeHtml(str)}</code></pre>`;
+      },
+    });
 
     function applyThemeByTime() {
       const h = new Date().getHours();
@@ -214,7 +250,7 @@
         const el = document.createElement('div');
         el.className = `msg ${m.sender}`;
         el.setAttribute('data-msg-id', m.id);
-        let html = escapeHtml(m.content);
+        let html = renderRichContent(m.content);
         html += `<div class="meta">${m.sender}`;
         if (m.replyToId) html += ` · reply to ${m.replyToId}`;
         if (branchPoints[m.id]) {
@@ -247,6 +283,15 @@
       const s = String(messageId);
       const idx = s.lastIndexOf(':');
       return idx >= 0 ? s.slice(idx + 1) : s;
+    }
+
+    function renderRichContent(text) {
+      try {
+        const raw = md.render(String(text || ''));
+        return DOMPurify.sanitize(raw);
+      } catch (_) {
+        return escapeHtml(String(text || ''));
+      }
     }
 
     function escapeHtml(str) {
