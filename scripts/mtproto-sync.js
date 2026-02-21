@@ -32,9 +32,16 @@ if (fs.existsSync(envPath)) {
 
   const mode = process.argv[2] || 'once';
   if (mode === 'loop') {
-    await ingestor.runLoop({ intervalMs: Number(process.env.TG_SYNC_INTERVAL_MS || 5000) });
+    await ingestor.runLoop({
+      intervalMs: Number(process.env.TG_SYNC_INTERVAL_MS || 5000),
+      backfillLimit: Number(process.env.TG_BACKFILL_LIMIT || 200),
+      replayBuffer: Number(process.env.TG_REPLAY_BUFFER || 30),
+    });
   } else {
-    await ingestor.syncOnce({ backfillLimit: Number(process.env.TG_BACKFILL_LIMIT || 500) });
+    await ingestor.syncOnce({
+      backfillLimit: Number(process.env.TG_BACKFILL_LIMIT || 500),
+      replayBuffer: Number(process.env.TG_REPLAY_BUFFER || 30),
+    });
     // one-shot mode should terminate cleanly
     await ingestor.client.disconnect();
     process.exit(0);

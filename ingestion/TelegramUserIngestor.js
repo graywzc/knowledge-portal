@@ -99,19 +99,20 @@ class TelegramUserIngestor {
     };
   }
 
-  async syncOnce({ backfillLimit = 200 } = {}) {
+  async syncOnce({ backfillLimit = 200, replayBuffer = 30 } = {}) {
     const entity = await this.client.getEntity(this.chatId);
     const lastId = this._getLastId();
     let maxSeen = lastId;
     let ingested = 0;
 
-    // If we already have a checkpoint, ask Telegram for only newer messages via minId.
-    // This is robust across all topics in the same chat because message ids are chat-global.
+    // Replay a small trailing window on each sync so edited/replaced messages near the tip
+    // can be refreshed via upsert (same id, newer content). Message ids are chat-global.
     const normalizedLimit = Number(backfillLimit);
     const unlimitedBackfill = !Number.isFinite(normalizedLimit) || normalizedLimit <= 0;
+    const normalizedReplay = Math.max(0, Number(replayBuffer) || 0);
 
     const iterOpts = lastId
-      ? { minId: lastId, reverse: true }
+      ? { minId: Math.max(0, lastId - normalizedReplay), reverse: true }
       : (unlimitedBackfill
           ? { reverse: true }
           : { limit: normalizedLimit, reverse: true });
@@ -119,7 +120,7 @@ class TelegramUserIngestor {
     for await (const msg of this.client.iterMessages(entity, iterOpts)) {
       if (!msg || !msg.id) continue;
       if (!this._inTopic(msg)) continue;
-      if (lastId && msg.id <= lastId) continue; // safety guard
+      if (lastId && msg.id <= (lastId - normalizedReplay)) continue; // safety guard
 
       const dbMsg = this._toDbMessage(msg);
       this.db.insertMessage(dbMsg);
@@ -132,11 +133,11 @@ class TelegramUserIngestor {
     return { ingested, lastId: maxSeen };
   }
 
-  async runLoop({ intervalMs = 5000 } = {}) {
+  async runLoop({ intervalMs = 5000, backfillLimit = 200, replayBuffer = 30 } = {}) {
     console.log('[MTProto] Continuous sync loop started');
     while (true) {
       try {
-        await this.syncOnce({ backfillLimit: 200 });
+        await this.syncOnce({ backfillLimit, replayBuffer });
       } catch (e) {
         console.error('[MTProto] sync error:', e.message);
       }
