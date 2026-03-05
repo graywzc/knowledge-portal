@@ -15,9 +15,12 @@
     #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
     #sidebar select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; font-size: 13px; }
 
-    .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; }
+    .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
     .tree-node.active { background: rgba(100,140,255,0.3); }
+    .tree-toggle { width: 16px; text-align: center; font-weight: 700; opacity: 0.9; cursor: pointer; user-select: none; }
+    .tree-toggle.placeholder { visibility: hidden; }
+    .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tree-children { margin-left: 16px; border-left: 1px solid #333; }
 
     #main { flex: 1; display: flex; flex-direction: column; }
@@ -92,6 +95,7 @@
     let currentTopicName = '';
     let currentLayerId = 'A';
     let viewState = null;
+    let expandedNodes = new Set(['A']);
 
     const md = window.markdownit({
       html: false,
@@ -190,9 +194,35 @@
       }
     }
 
+    function topicStateKey(source, channel) {
+      return `kp:lastLayer:${source}:${channel}`;
+    }
+
+    function getSavedLayer(source, channel) {
+      try { return localStorage.getItem(topicStateKey(source, channel)); } catch (_) { return null; }
+    }
+
+    function saveCurrentLayer(source, channel, layerId) {
+      try { localStorage.setItem(topicStateKey(source, channel), layerId); } catch (_) {}
+    }
+
+    function expandPathToLayer(layerId) {
+      expandedNodes = new Set();
+      let cur = layerId;
+      while (cur) {
+        expandedNodes.add(cur);
+        const p = viewState?.state?.layers?.[cur]?.parentLayerId || null;
+        cur = p;
+      }
+      expandedNodes.add('A');
+    }
+
     async function loadView(source, channel) {
       viewState = await api('GET', `/sources/${encodeURIComponent(source)}/channels/${encodeURIComponent(channel)}/view`);
-      currentLayerId = viewState.currentLayerId;
+      const saved = getSavedLayer(source, channel);
+      const exists = saved && viewState?.state?.layers?.[saved];
+      currentLayerId = exists ? saved : viewState.currentLayerId;
+      expandPathToLayer(currentLayerId);
       renderTree(viewState.tree);
       showLayer(currentLayerId);
     }
@@ -211,14 +241,36 @@
         container.innerHTML = '';
       }
       if (!node) return;
+
+      const hasChildren = !!(node.children && node.children.length);
+      const isExpanded = expandedNodes.has(node.id);
+
       const div = document.createElement('div');
       div.className = 'tree-node' + (node.id === currentLayerId ? ' active' : '');
-      div.textContent = layerTitle(node.id);
       div.title = `${layerTitle(node.id)} (${node.messageCount} msgs)`;
+
+      const toggle = document.createElement('span');
+      toggle.className = hasChildren ? 'tree-toggle' : 'tree-toggle placeholder';
+      toggle.textContent = hasChildren ? (isExpanded ? '−' : '+') : '·';
+      if (hasChildren) {
+        toggle.onclick = (e) => {
+          e.stopPropagation();
+          if (expandedNodes.has(node.id)) expandedNodes.delete(node.id);
+          else expandedNodes.add(node.id);
+          renderTree(viewState.tree);
+        };
+      }
+
+      const label = document.createElement('span');
+      label.className = 'tree-label';
+      label.textContent = layerTitle(node.id);
+
+      div.appendChild(toggle);
+      div.appendChild(label);
       div.onclick = (e) => { e.stopPropagation(); showLayer(node.id); };
       container.appendChild(div);
 
-      if (node.children && node.children.length) {
+      if (hasChildren && isExpanded) {
         const childContainer = document.createElement('div');
         childContainer.className = 'tree-children';
         node.children.forEach(c => renderTree(c, childContainer));
@@ -229,6 +281,8 @@
     function showLayer(layerId, focusMessageId = null) {
       if (!viewState) return;
       currentLayerId = layerId;
+      expandPathToLayer(layerId);
+      saveCurrentLayer(currentSource, currentChannel, layerId);
       const layers = viewState.state.layers;
       const layer = layers[layerId];
       if (!layer) return;
