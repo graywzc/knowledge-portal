@@ -34,6 +34,11 @@
     .msg pre { background: #0b1220; color: #dbe7ff; padding: 10px 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
     .msg code { background: rgba(74,108,247,0.12); padding: 1px 5px; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
     .msg pre code { background: transparent; padding: 0; border-radius: 0; font-size: 12px; }
+    .msg .code-card { border: 1px solid #cfd6e6; border-radius: 8px; overflow: hidden; margin: 8px 0; }
+    .msg .code-header { display: flex; justify-content: space-between; align-items: center; background: #d9ecff; color: #2d4f73; padding: 4px 8px; font-size: 12px; }
+    .msg .code-header .lang { font-weight: 600; text-transform: lowercase; }
+    .msg .code-header .copy-btn { border: none; background: transparent; cursor: pointer; color: inherit; font-size: 12px; }
+    .msg .code-card pre { margin: 0; border-radius: 0; }
     .msg table { width: 100%; border-collapse: collapse; margin: 8px 0; display: block; overflow-x: auto; }
     .msg th, .msg td { border: 1px solid #d7dbe5; padding: 6px 8px; text-align: left; white-space: nowrap; }
     .msg th { background: #eef2ff; }
@@ -58,6 +63,8 @@
     body.dark .msg th, body.dark .msg td { border-color: #3a4458; }
     body.dark .msg th { background: #20283a; }
     body.dark .msg blockquote { color: #b8c2d4; border-left-color: #64748b; }
+    body.dark .msg .code-card { border-color: #2f3a52; }
+    body.dark .msg .code-header { background: #29425f; color: #d8e8ff; }
     .msg .branch-badge { display: inline-block; background: #4a6cf7; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; cursor: pointer; }
 
     #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
@@ -382,11 +389,42 @@
       return out.join('\n');
     }
 
+    function detectCodeLang(codeEl) {
+      const cls = codeEl.className || '';
+      const m = cls.match(/language-([a-z0-9_+-]+)/i);
+      if (m) return m[1].toLowerCase();
+      const txt = (codeEl.textContent || '').trim();
+      if (/^(\$\s*)?(npm|pnpm|yarn|node|python|pip|git|docker|kubectl|curl|wget|cd|ls)\b/im.test(txt)) return 'shell';
+      return 'text';
+    }
+
+    function enhanceCodeBlocks(html) {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      wrap.querySelectorAll('pre > code').forEach((codeEl, idx) => {
+        const pre = codeEl.parentElement;
+        const lang = detectCodeLang(codeEl);
+        const card = document.createElement('div');
+        card.className = 'code-card';
+
+        const header = document.createElement('div');
+        header.className = 'code-header';
+        header.innerHTML = `<span class="lang">${escapeHtml(lang)}</span><button class="copy-btn" data-copy-id="cb-${idx}">⧉</button>`;
+
+        codeEl.setAttribute('data-copy-src', `cb-${idx}`);
+        pre.parentNode.insertBefore(card, pre);
+        card.appendChild(header);
+        card.appendChild(pre);
+      });
+      return wrap.innerHTML;
+    }
+
     function renderRichContent(text) {
       try {
         const pre = preprocessMessageForMarkdown(text);
         const raw = md.render(pre);
-        return DOMPurify.sanitize(raw);
+        const safe = DOMPurify.sanitize(raw);
+        return enhanceCodeBlocks(safe);
       } catch (_) {
         return escapeHtml(String(text || ''));
       }
@@ -397,6 +435,20 @@
       div.textContent = str;
       return div.innerHTML;
     }
+
+    document.getElementById('messages').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.copy-btn');
+      if (!btn) return;
+      const id = btn.getAttribute('data-copy-id');
+      const src = document.querySelector(`code[data-copy-src="${id}"]`);
+      if (!src) return;
+      try {
+        await navigator.clipboard.writeText(src.textContent || '');
+        const old = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = old; }, 900);
+      } catch (_) {}
+    });
 
     document.getElementById('source-select').onchange = async (e) => {
       currentSource = e.target.value;
