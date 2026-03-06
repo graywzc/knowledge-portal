@@ -106,6 +106,7 @@ class TreeNavigator {
       content: msg.content,
       timestamp: msg.timestamp,
       replyToId: msg.replyToId,
+      entities: msg.entities || null,
     });
     this.messageIndex.set(msg.id, { layerId: targetLayerId, position });
 

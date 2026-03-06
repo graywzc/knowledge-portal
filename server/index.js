@@ -45,12 +45,19 @@ function buildTree(source, channel) {
       ? 'self'
       : (botIds.has(senderId) ? 'bot' : 'other');
 
+    let entities = null;
+    try {
+      const meta = msg.raw_meta ? JSON.parse(msg.raw_meta) : null;
+      entities = Array.isArray(meta?.entities) ? meta.entities : null;
+    } catch {}
+
     nav.addMessage({
       id: msg.id,
       sender,
       replyToId: msg.reply_to_id || null,
       content: msg.content,
       timestamp: msg.timestamp,
+      entities,
     });
   }
 

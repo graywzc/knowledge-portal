@@ -67,6 +67,16 @@ class TelegramUserIngestor {
       ? String(msg.replyTo.replyToTopId)
       : (forumTopic && replyToMsgId ? String(replyToMsgId) : (actionTopicCreate ? String(msg.id) : null));
 
+    const entities = Array.isArray(msg.entities)
+      ? msg.entities.map(e => ({
+          type: e.className || e.constructor?.name || 'UnknownEntity',
+          offset: Number(e.offset || 0),
+          length: Number(e.length || 0),
+          language: e.language || null,
+          url: e.url || null,
+        }))
+      : [];
+
     return {
       id: `tg:${chatId}:${msg.id}`,
       source: 'telegram',
@@ -95,6 +105,7 @@ class TelegramUserIngestor {
         topic_title: actionTopicTitle,
         reply_to_msg_id: replyToMsgId,
         reply_to_top_id: msg.replyTo?.replyToTopId || null,
+        entities,
       },
     };
   }

@@ -321,7 +321,7 @@
         const el = document.createElement('div');
         el.className = `msg ${m.sender}`;
         el.setAttribute('data-msg-id', m.id);
-        let html = renderRichContent(m.content);
+        let html = renderRichContent(m.content, m.entities);
         html += `<div class="meta">${m.sender}`;
         if (m.replyToId) html += ` · reply to ${m.replyToId}`;
         if (branchPoints[m.id]) {
@@ -364,37 +364,8 @@
       const chartLike = /[│┤┼╭╮╯╰╲─→]/.test(s) && /\n/.test(s);
       if (chartLike) return `\n\`\`\`text\n${s}\n\`\`\``;
 
-      const lines = s.split('\n');
-
-      const isCommandLike = (line) => {
-        const t = line.trim();
-        if (!t) return false;
-        if (/^[•*-]\s+/.test(t)) return false; // bullets are prose/list, not shell
-        if (/^(Architecture|Notes|recommended|Now from Mac|Detach|Reconnect later|Check quickly)/i.test(t)) return false;
-
-        const startsWithCmd = /^(?:\$\s*)?(?:sudo|npm|pnpm|yarn|node|python|pip|git|docker|kubectl|yolo|ffmpeg|curl|wget|cd|ls|cat|echo|export|source|tmux|tail|ss|netsh|wsl|Add-WindowsCapability|Start-Service|Set-Service|New-NetFirewallRule|jupyter)\b/i.test(t);
-        const cliShape = /(--?[a-z0-9][\w-]*|\|\s*tee\b|<[^>]+>|@[\w.-]+|\b\d{2,5}\b)/i.test(t);
-        return startsWithCmd || (cliShape && /\s/.test(t));
-      };
-
-      let i = 0;
-      const out = [];
-      while (i < lines.length) {
-        if (isCommandLike(lines[i])) {
-          const block = [];
-          while (i < lines.length && lines[i].trim() && isCommandLike(lines[i])) {
-            block.push(lines[i]);
-            i++;
-          }
-          out.push('```shell');
-          out.push(...block);
-          out.push('```');
-          continue;
-        }
-        out.push(lines[i]);
-        i++;
-      }
-      return out.join('\n');
+      // No command-line heuristics: only style sections that are explicitly marked in content.
+      return s;
     }
 
     function detectCodeLang(codeEl) {
@@ -427,8 +398,42 @@
       return wrap.innerHTML;
     }
 
-    function renderRichContent(text) {
+    function renderFromEntities(text, entities) {
+      const s = String(text || '');
+      const ents = (Array.isArray(entities) ? entities : [])
+        .filter(e => Number.isFinite(e?.offset) && Number.isFinite(e?.length) && e.length > 0)
+        .sort((a, b) => a.offset - b.offset);
+      if (!ents.length) return null;
+
+      const pieces = [];
+      let i = 0;
+
+      for (const e of ents) {
+        const start = Math.max(0, Math.min(s.length, e.offset));
+        const end = Math.max(start, Math.min(s.length, e.offset + e.length));
+        if (start > i) pieces.push(escapeHtml(s.slice(i, start)));
+        const chunk = s.slice(start, end);
+        if (/MessageEntityPre$/.test(e.type || '')) {
+          const lang = String(e.language || 'text').toLowerCase();
+          pieces.push(`\n\n\`\`\`${lang}\n${chunk}\n\`\`\`\n\n`);
+        } else {
+          pieces.push(escapeHtml(chunk));
+        }
+        i = Math.max(i, end);
+      }
+      if (i < s.length) pieces.push(escapeHtml(s.slice(i)));
+
+      // We introduced markdown fences for PRE ranges, so run through markdown renderer after reassembly.
+      const merged = pieces.join('');
+      const raw = md.render(merged);
+      return enhanceCodeBlocks(DOMPurify.sanitize(raw));
+    }
+
+    function renderRichContent(text, entities = null) {
       try {
+        const fromEntities = renderFromEntities(text, entities);
+        if (fromEntities) return fromEntities;
+
         const pre = preprocessMessageForMarkdown(text);
         const raw = md.render(pre);
         const safe = DOMPurify.sanitize(raw);
