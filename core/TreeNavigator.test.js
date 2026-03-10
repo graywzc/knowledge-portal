@@ -1,4 +1,3 @@
-const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { TreeNavigator } = require('./TreeNavigator');
 
@@ -30,7 +29,7 @@ describe('TreeNavigator', () => {
     assert.strictEqual(nav.getLayer('B').parentLayerId, 'A');
   });
 
-  it('jumps back when replying to own message', () => {
+  it('stays in current layer when replying to root anchor from a sub-layer', () => {
     const nav = new TreeNavigator();
     nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'a1', timestamp: 1 });
     nav.addMessage({ id: '2', sender: 'other', replyToId: null, content: 'a2', timestamp: 2 });
@@ -38,12 +37,12 @@ describe('TreeNavigator', () => {
     nav.addMessage({ id: '3', sender: 'self', replyToId: '2', content: 'b1', timestamp: 3 });
     assert.strictEqual(nav.getCurrentLayerId(), 'B');
 
-    // Jump back to A by replying to own message in A
+    // Forum-root anchor behavior: append in B instead of jumping to A
     const result = nav.addMessage({ id: '4', sender: 'self', replyToId: '1', content: 'a3', timestamp: 4 });
-    assert.strictEqual(result.action, 'jump');
-    assert.strictEqual(result.layerId, 'A');
-    assert.strictEqual(nav.getCurrentLayerId(), 'A');
-    assert.strictEqual(nav.getLayer('A').messages.length, 3);
+    assert.strictEqual(result.action, 'append');
+    assert.strictEqual(result.layerId, 'B');
+    assert.strictEqual(nav.getCurrentLayerId(), 'B');
+    assert.strictEqual(nav.getLayer('B').messages.length, 2);
   });
 
   it('supports multiple sub-layers from same parent', () => {
@@ -104,5 +103,38 @@ describe('TreeNavigator', () => {
     assert.strictEqual(tree.id, 'A');
     assert.strictEqual(tree.children.length, 1);
     assert.strictEqual(tree.children[0].id, 'B');
+  });
+
+  it('treats replies to unknown message as append', () => {
+    const nav = new TreeNavigator();
+    const out = nav.addMessage({ id: '1', sender: 'self', replyToId: 'missing', content: 'x', timestamp: 1 });
+    assert.strictEqual(out.action, 'append');
+    assert.strictEqual(out.layerId, 'A');
+  });
+
+  it('bot root-anchor reply in sub-layer appends in current layer', () => {
+    const nav = new TreeNavigator();
+    nav.addMessage({ id: 'root', sender: 'self', replyToId: null, content: 'root', timestamp: 1 });
+    nav.addMessage({ id: 'other', sender: 'other', replyToId: null, content: 'other', timestamp: 2 });
+    nav.addMessage({ id: 'branch', sender: 'self', replyToId: 'other', content: 'branch', timestamp: 3 });
+
+    const out = nav.addMessage({ id: 'bot', sender: 'bot', replyToId: 'root', content: 'bot', timestamp: 4 });
+    assert.strictEqual(out.action, 'append');
+    assert.strictEqual(out.layerId, 'B');
+  });
+
+  it('throws for unknown strategy action type', () => {
+    const nav = new TreeNavigator({ strategy: { decide: () => ({ type: 'mystery' }) } });
+    assert.throws(
+      () => nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'x', timestamp: 1 }),
+      /Unknown action type/
+    );
+  });
+
+  it('returns null for missing layer and handles missing root in getTree', () => {
+    const nav = new TreeNavigator();
+    assert.strictEqual(nav.getLayer('NOPE'), null);
+    nav.layers.delete('A');
+    assert.strictEqual(nav.getTree(), null);
   });
 });
