@@ -3,18 +3,20 @@ const path = require('path');
 const { Database } = require('../db/Database');
 const { TreeNavigator } = require('../core/TreeNavigator');
 
-const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../data/portal.db');
 
-// Ensure data dir exists
-const fs = require('fs');
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+function createApp({ dbPath } = {}) {
+  const app = express();
+  const DB_PATH = dbPath || process.env.DB_PATH || path.join(__dirname, '../data/portal.db');
 
-const db = new Database(DB_PATH);
+  // Ensure data dir exists
+  const fs = require('fs');
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, '../web/public')));
+  const db = new Database(DB_PATH);
+
+  app.use(express.json());
+  app.use(express.static(path.join(__dirname, '../web/public')));
 
 // --- Helper: build tree view from DB messages ---
 
@@ -136,6 +138,14 @@ app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
   res.json(db.getMessages(req.params.source, req.params.channel));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`knowledge-portal running on http://localhost:${PORT}`);
-});
+  return app;
+}
+
+if (require.main === module) {
+  const app = createApp();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`knowledge-portal running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = { createApp };
