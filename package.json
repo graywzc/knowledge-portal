@@ -7,7 +7,6 @@
     "start": "node server/index.js",
     "dev": "DB_PATH=data/dev.db node --env-file=.env --watch server/index.js",
     "seed": "DB_PATH=data/dev.db node scripts/seed.js",
-    "poll": "node scripts/poll.js",
     "mtproto:once": "node scripts/mtproto-sync.js once",
     "mtproto:loop": "node scripts/mtproto-sync.js loop",
     "mtproto:reset-last-id": "node scripts/reset-last-id.js",
