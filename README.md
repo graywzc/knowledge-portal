@@ -47,6 +47,18 @@ npm run mtproto:loop   # continuous sync
 npm run mtproto:reset-last-id -- 560   # optional: move checkpoint backward/forward
 ```
 
+### C) Debug utility: fetch one raw Telegram message payload
+Use this to inspect the exact MTProto payload for a specific message id (helpful for adapter/topic logic).
+
+```bash
+node scripts/fetch-telegram-msg.js -1003826585913 1623
+```
+
+It reads credentials/session from:
+- `TG_API_ID` / `TG_API_HASH` (or `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`)
+- `TG_SESSION_PATH` (or fallback `data/telegram_user.session`)
+- optional default chat from `TG_CHAT_ID`
+
 `PORTAL_VIEWER_USER_ID` controls whose perspective is treated as "self".
 `PORTAL_BOT_USER_IDS` (comma-separated Telegram user ids) marks bot senders; bot replies stay in the same layer as the ask they reply to.
 `TG_REPLAY_BUFFER` (default `30`) re-pulls a small recent message-id window on every MTProto sync so edited bot messages can be refreshed by upsert.
