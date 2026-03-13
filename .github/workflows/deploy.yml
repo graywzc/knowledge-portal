@@ -53,10 +53,16 @@ jobs:
             set -euo pipefail
 
             APP_DIR="/opt/knowledge-portal"
+            SHARED_ENV="/opt/knowledge-portal/shared/.env"
             REPO="git@github.com:graywzc/knowledge-portal.git"
 
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
+
+            if [ ! -f "$SHARED_ENV" ]; then
+              echo "Missing env file: $SHARED_ENV"
+              exit 1
+            fi
 
             if [ ! -d .git ]; then
               git clone "$REPO" .
@@ -69,10 +75,10 @@ jobs:
             npm ci
             npm test
 
-            if pm2 describe knowledge-portal >/dev/null 2>&1; then
-              pm2 restart knowledge-portal --update-env
-            else
-              pm2 start "npm run dev:all" --name knowledge-portal
-            fi
+            pm2 delete knowledge-portal-app >/dev/null 2>&1 || true
+            pm2 delete knowledge-portal-ingest >/dev/null 2>&1 || true
+
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run start:prod" --name knowledge-portal-app
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:prod:loop" --name knowledge-portal-ingest
             pm2 save
           EOF
