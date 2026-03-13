@@ -2,6 +2,12 @@ node_modules/
 .DS_Store
 data/
 .env
+.env.*
+shared/
+*.db
+*.db-wal
+*.db-shm
+*.session
 .idea/
 
 coverage/

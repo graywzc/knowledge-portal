@@ -1,0 +1,84 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Mac mini
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gha-deploy-knowledge-portal
+
+      - name: Setup SSH key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        shell: bash
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" << 'EOF'
+            set -euo pipefail
+
+            APP_DIR="/opt/knowledge-portal"
+            SHARED_ENV="/opt/knowledge-portal/shared/.env"
+            REPO="git@github.com:graywzc/knowledge-portal.git"
+
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+
+            if [ ! -f "$SHARED_ENV" ]; then
+              echo "Missing env file: $SHARED_ENV"
+              exit 1
+            fi
+
+            if [ ! -d .git ]; then
+              git clone "$REPO" .
+            fi
+
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
+
+            npm ci
+            npm test
+
+            pm2 delete knowledge-portal-app >/dev/null 2>&1 || true
+            pm2 delete knowledge-portal-ingest >/dev/null 2>&1 || true
+
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run start:prod" --name knowledge-portal-app
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:prod:loop" --name knowledge-portal-ingest
+            pm2 save
+          EOF
