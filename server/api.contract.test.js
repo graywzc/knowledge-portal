@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const request = require('supertest');
+const { Database } = require('../db/Database');
 const { createApp } = require('./index');
 
 function isStringArray(v) {
@@ -13,12 +14,12 @@ describe('API contract tests', () => {
   let dbPath;
   let app;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kp-api-contract-'));
     dbPath = path.join(dir, 'test.db');
-    app = createApp({ dbPath });
 
-    await request(app).post('/api/ingest').send([
+    const db = new Database(dbPath);
+    db.insertMessages([
       {
         id: 'tg:-100:1',
         source: 'telegram',
@@ -41,6 +42,9 @@ describe('API contract tests', () => {
         timestamp: 1700000001000,
       },
     ]);
+    db.close();
+
+    app = createApp({ dbPath });
   });
 
   afterEach(() => {
@@ -95,47 +99,17 @@ describe('API contract tests', () => {
     fs.rmSync(freshDir, { recursive: true, force: true });
   });
 
-  it('POST /api/ingest returns {ingested:number} and ignores invalid payload entries', async () => {
-    const res = await request(app)
+  it('POST /api/ingest is removed', async () => {
+    await request(app)
       .post('/api/ingest')
-      .send([
-        {
-          id: 'tg:-100:3',
-          source: 'telegram',
-          channel: '55',
-          senderId: 'u1',
-          content: 'ok',
-          timestamp: 1700000002000,
-        },
-        {
-          // invalid: missing required fields
-          id: 'bad',
-        },
-      ])
-      .expect(200);
-
-    expect(typeof res.body.ingested).toBe('number');
-    expect(res.body.ingested).toBe(1);
+      .send({ id: 'x' })
+      .expect(404);
   });
 
-  it('POST /api/ingest/telegram returns {ingested:number}', async () => {
-    const res = await request(app)
+  it('POST /api/ingest/telegram is removed', async () => {
+    await request(app)
       .post('/api/ingest/telegram')
-      .send({
-        messages: [
-          {
-            message_id: 99,
-            date: 1700000010,
-            text: 'telegram payload',
-            chat: { id: -100 },
-            from: { id: 123, first_name: 'A' },
-            message_thread_id: 55,
-          },
-        ],
-      })
-      .expect(200);
-
-    expect(typeof res.body.ingested).toBe('number');
-    expect(res.body.ingested).toBe(1);
+      .send({ message_id: 99 })
+      .expect(404);
   });
 });
