@@ -19,54 +19,6 @@ describe('scripts', () => {
     jest.resetModules();
   });
 
-  it('poll.js exits when TELEGRAM_BOT_TOKEN is missing', async () => {
-    await withProcessState(
-      {
-        argv: ['node', 'scripts/poll.js'],
-        env: { TELEGRAM_BOT_TOKEN: '' },
-      },
-      async () => {
-        jest.doMock('fs', () => ({ existsSync: () => false, readFileSync: () => '' }));
-        jest.doMock('../ingestion/TelegramPoller', () => ({ TelegramPoller: jest.fn() }));
-
-        const exitSpy = jest.spyOn(process, 'exit').mockImplementation((code) => {
-          throw new Error(`EXIT:${code}`);
-        });
-
-        expect(() => {
-          jest.isolateModules(() => {
-            require('./poll');
-          });
-        }).toThrow('EXIT:1');
-
-        expect(exitSpy).toHaveBeenCalledWith(1);
-      }
-    );
-  });
-
-  it('poll.js constructs poller and starts when token is present', async () => {
-    await withProcessState(
-      {
-        argv: ['node', 'scripts/poll.js'],
-        env: { TELEGRAM_BOT_TOKEN: 'token', TELEGRAM_CHAT_ID: '-100' },
-      },
-      async () => {
-        const mockStart = jest.fn();
-        const mockStop = jest.fn();
-        const MockPoller = jest.fn().mockImplementation(() => ({ start: mockStart, stop: mockStop }));
-
-        jest.doMock('fs', () => ({ existsSync: () => false, readFileSync: () => '' }));
-        jest.doMock('../ingestion/TelegramPoller', () => ({ TelegramPoller: MockPoller }));
-
-        jest.isolateModules(() => {
-          require('./poll');
-        });
-
-        expect(MockPoller).toHaveBeenCalled();
-        expect(mockStart).toHaveBeenCalled();
-      }
-    );
-  });
 
   it('mtproto-sync.js runs loop mode', async () => {
     await withProcessState(

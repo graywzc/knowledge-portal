@@ -35,19 +35,14 @@ Open http://localhost:3001
 
 ## Ingestion Options
 
-### A) Bot polling (limited visibility in groups)
-```bash
-npm run poll
-```
-
-### B) User-account MTProto sync (recommended; sees human + bot messages)
+### A) User-account MTProto sync (recommended; sees human + bot messages)
 ```bash
 npm run mtproto:once   # first login + one sync
 npm run mtproto:loop   # continuous sync
 npm run mtproto:reset-last-id -- 560   # optional: move checkpoint backward/forward
 ```
 
-### C) Debug utility: fetch one raw Telegram message payload
+### B) Debug utility: fetch one raw Telegram message payload
 Use this to inspect the exact MTProto payload for a specific message id (helpful for adapter/topic logic).
 
 ```bash
