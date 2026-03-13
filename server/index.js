@@ -109,30 +109,6 @@ app.get('/api/sources/:source/channels/:channel/view', (req, res) => {
   });
 });
 
-/** Ingest messages (generic) */
-app.post('/api/ingest', (req, res) => {
-  const messages = Array.isArray(req.body) ? req.body : [req.body];
-  let count = 0;
-  for (const msg of messages) {
-    if (!msg.id || !msg.source || !msg.channel || !msg.senderId || !msg.content || !msg.timestamp) {
-      continue;
-    }
-    db.insertMessage(msg);
-    count++;
-  }
-  res.json({ ingested: count });
-});
-
-/** Ingest Telegram messages */
-app.post('/api/ingest/telegram', (req, res) => {
-  const { TelegramAdapter } = require('../ingestion/TelegramAdapter');
-  const selfUserId = req.query.selfUserId || req.body.selfUserId;
-  const adapter = new TelegramAdapter(db, { selfUserId });
-  const messages = req.body.messages || (Array.isArray(req.body) ? req.body : [req.body]);
-  const ingested = adapter.ingestBatch(messages);
-  res.json({ ingested: ingested.length });
-});
-
 /** Raw messages for a channel (for debugging) */
 app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
   res.json(db.getMessages(req.params.source, req.params.channel));
