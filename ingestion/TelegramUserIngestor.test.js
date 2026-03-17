@@ -19,6 +19,7 @@ jest.mock('../db/Database', () => ({
 
 const mockStart = jest.fn();
 const mockGetEntity = jest.fn();
+const mockDownloadMedia = jest.fn();
 let mockIterMessagesImpl = async function* () {};
 
 jest.mock('telegram', () => ({
@@ -26,6 +27,7 @@ jest.mock('telegram', () => ({
     start: mockStart,
     getEntity: mockGetEntity,
     iterMessages: (...args) => mockIterMessagesImpl(...args),
+    downloadMedia: mockDownloadMedia,
     session: { save: () => 'saved-session' },
   })),
 }));
@@ -43,6 +45,7 @@ describe('TelegramUserIngestor', () => {
     jest.clearAllMocks();
     mockDbPrepareGet.mockReturnValue(null);
     mockIterMessagesImpl = async function* () {};
+    mockDownloadMedia.mockResolvedValue(undefined);
   });
 
   it('start logs in and saves session', async () => {
@@ -104,6 +107,51 @@ describe('TelegramUserIngestor', () => {
     const m3 = ing._toDbMessage({ id: 12, message: '', date: '2026-01-01T00:00:00Z', action: { className: 'MessageActionTopicCreate', title: 'Topic' }, replyTo: {} });
     expect(m3.topicId).toBe('12');
     expect(m3.rawMeta.topic_title).toBe('Topic');
+  });
+
+  it('downloads image media and stores media metadata', async () => {
+    jest.spyOn(fs, 'existsSync').mockImplementation((p) => String(p).includes('telegram_user.session'));
+    jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'statSync').mockReturnValue({ size: 1234 });
+
+    const ing = new TelegramUserIngestor({ apiId: '1', apiHash: 'h', phone: '+1', dbPath: '/tmp/x.db', chatId: '-100' });
+    const base = ing._toDbMessage({ id: 77, chatId: '-100', replyTo: { replyToTopId: 55 }, message: '', photo: { w: 800, h: 600 } });
+    const out = await ing._attachImageMedia(base, { id: 77, photo: { w: 800, h: 600 } });
+
+    expect(mockDownloadMedia).toHaveBeenCalled();
+    expect(out.contentType).toBe('image');
+    expect(out.mediaPath).toContain('telegram/-100/55/77.jpg');
+    expect(out.mediaMime).toBe('image/jpeg');
+    expect(out.mediaSize).toBe(1234);
+    expect(out.mediaWidth).toBe(800);
+    expect(out.mediaHeight).toBe(600);
+  });
+
+  it('syncOnce continues when image download fails and advances last id', async () => {
+    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {});
+    mockDownloadMedia.mockRejectedValue(new Error('download failed'));
+
+    const ing = new TelegramUserIngestor({ apiId: '1', apiHash: 'h', phone: '+1', dbPath: '/tmp/x.db', chatId: '-100' });
+    mockGetEntity.mockResolvedValue({ id: 'chat' });
+    mockDbPrepareGet.mockReturnValue({ value: '100' });
+
+    mockIterMessagesImpl = async function* () {
+      yield { id: 131, replyTo: { replyToTopId: 55 }, message: '', photo: { w: 100, h: 80 }, chatId: '-100' };
+      yield { id: 132, replyTo: { replyToTopId: 55 }, message: 'after-fail', chatId: '-100' };
+    };
+
+    const out = await ing.syncOnce({ backfillLimit: 200, replayBuffer: 30 });
+    expect(out.ingested).toBe(2);
+    expect(out.lastId).toBe(132);
+    expect(mockInsertMessage).toHaveBeenCalledTimes(2);
+
+    const first = mockInsertMessage.mock.calls[0][0];
+    expect(first.contentType).toBe('image');
+    expect(first.mediaPath).toBeNull();
+    expect(first.rawMeta.media_kind).toBe('photo');
+
+    expect(mockDbPrepareRun).toHaveBeenCalledWith('mtproto_last_id:-100:all', '132');
   });
 
   it('syncOnce ingests messages and updates last id', async () => {

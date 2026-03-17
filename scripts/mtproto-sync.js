@@ -26,6 +26,7 @@ if (fs.existsSync(envPath)) {
     chatId: process.env.TG_CHAT_ID || process.env.TELEGRAM_CHAT_ID,
     topicId: process.env.TG_TOPIC_ID || null,
     sessionPath: process.env.TG_SESSION_PATH || 'data/telegram_user.session',
+    mediaRoot: process.env.MEDIA_ROOT || 'media',
   });
 
   await ingestor.start();

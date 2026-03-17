@@ -17,6 +17,11 @@ class Database {
     const cols = this.db.prepare(`PRAGMA table_info(messages)`).all().map(c => c.name);
     if (!cols.includes('chat_id')) this.db.exec(`ALTER TABLE messages ADD COLUMN chat_id TEXT`);
     if (!cols.includes('topic_id')) this.db.exec(`ALTER TABLE messages ADD COLUMN topic_id TEXT`);
+    if (!cols.includes('media_path')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_path TEXT`);
+    if (!cols.includes('media_mime')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_mime TEXT`);
+    if (!cols.includes('media_size')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_size INTEGER`);
+    if (!cols.includes('media_width')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_width INTEGER`);
+    if (!cols.includes('media_height')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_height INTEGER`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_scope ON messages(source, chat_id, topic_id)`);
 
     this._normalizeTelegramScopes();
@@ -61,8 +66,8 @@ class Database {
    */
   insertMessage(msg) {
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, source, channel, chat_id, topic_id, sender_id, sender_name, sender_role, reply_to_id, content, content_type, timestamp, raw_meta)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, source, channel, chat_id, topic_id, sender_id, sender_name, sender_role, reply_to_id, content, content_type, media_path, media_mime, media_size, media_width, media_height, timestamp, raw_meta)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         channel      = COALESCE(excluded.channel, messages.channel),
         chat_id      = COALESCE(messages.chat_id, excluded.chat_id),
@@ -72,6 +77,11 @@ class Database {
         reply_to_id  = COALESCE(excluded.reply_to_id, messages.reply_to_id),
         content      = COALESCE(excluded.content, messages.content),
         content_type = COALESCE(excluded.content_type, messages.content_type),
+        media_path   = COALESCE(excluded.media_path, messages.media_path),
+        media_mime   = COALESCE(excluded.media_mime, messages.media_mime),
+        media_size   = COALESCE(excluded.media_size, messages.media_size),
+        media_width  = COALESCE(excluded.media_width, messages.media_width),
+        media_height = COALESCE(excluded.media_height, messages.media_height),
         timestamp    = COALESCE(excluded.timestamp, messages.timestamp),
         raw_meta     = COALESCE(excluded.raw_meta, messages.raw_meta)
     `);
@@ -91,6 +101,11 @@ class Database {
       msg.replyToId || null,
       msg.content,
       msg.contentType || 'text',
+      msg.mediaPath || null,
+      msg.mediaMime || null,
+      Number.isFinite(msg.mediaSize) ? msg.mediaSize : null,
+      Number.isFinite(msg.mediaWidth) ? msg.mediaWidth : null,
+      Number.isFinite(msg.mediaHeight) ? msg.mediaHeight : null,
       msg.timestamp,
       msg.rawMeta ? JSON.stringify(msg.rawMeta) : null,
     );

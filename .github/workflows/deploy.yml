@@ -26,6 +26,17 @@ jobs:
         with:
           ref: main
 
+      - name: Resolve deploy SHA
+        id: resolve_sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
@@ -47,30 +58,32 @@ jobs:
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SHA: ${{ steps.resolve_sha.outputs.sha }}
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" << 'EOF'
+          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" "DEPLOY_SHA='${DEPLOY_SHA}' bash -s" << 'EOF'
             set -euo pipefail
 
-            APP_DIR="/opt/knowledge-portal"
-            SHARED_ENV="/opt/knowledge-portal/shared/.env"
+            BASE_DIR="/opt/knowledge-portal"
+            APP_DIR="$BASE_DIR/current"
+            SHARED_ENV="$BASE_DIR/shared/.env"
             REPO="git@github.com:graywzc/knowledge-portal.git"
 
-            mkdir -p "$APP_DIR"
-            cd "$APP_DIR"
+            mkdir -p "$BASE_DIR/shared" "$BASE_DIR/data" "$BASE_DIR/media"
 
             if [ ! -f "$SHARED_ENV" ]; then
               echo "Missing env file: $SHARED_ENV"
               exit 1
             fi
 
-            if [ ! -d .git ]; then
-              git clone "$REPO" .
+            if [ ! -d "$APP_DIR/.git" ]; then
+              rm -rf "$APP_DIR"
+              git clone "$REPO" "$APP_DIR"
             fi
 
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            cd "$APP_DIR"
+            git fetch origin --prune
+            git checkout -f "$DEPLOY_SHA"
 
             npm ci
             npm test
@@ -78,7 +91,7 @@ jobs:
             pm2 delete knowledge-portal-app >/dev/null 2>&1 || true
             pm2 delete knowledge-portal-ingest >/dev/null 2>&1 || true
 
-            ENV_FILE="$SHARED_ENV" pm2 start "npm run start:prod" --name knowledge-portal-app
-            ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:prod:loop" --name knowledge-portal-ingest
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run app:start" --name knowledge-portal-app --cwd "$APP_DIR"
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:loop" --name knowledge-portal-ingest --cwd "$APP_DIR"
             pm2 save
           EOF

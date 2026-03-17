@@ -28,10 +28,16 @@ Navigation strategy is pluggable — swap `DefaultNavigationStrategy` with your 
 ```bash
 npm install
 cp .env.example .env
-npm run dev
+npm run app:watch
 ```
 
-Open http://localhost:3001
+Open http://localhost:3002
+
+If you also want MTProto ingestion running locally:
+
+```bash
+npm run dev:all
+```
 
 ## Ingestion Options
 

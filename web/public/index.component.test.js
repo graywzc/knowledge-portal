@@ -7,14 +7,16 @@ function flush() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function makeView({ empty = false, withBranch = false } = {}) {
+function makeView({ empty = false, withBranch = false, withImage = false } = {}) {
   const layerA = {
     id: 'A',
     parentLayerId: null,
     branchFromMessageId: null,
     messages: empty
       ? []
-      : [{ id: 'tg:-100:1', sender: 'self', content: 'root msg', timestamp: 1700000000000 }],
+      : [withImage
+        ? { id: 'tg:-100:1', sender: 'self', content: '[media]', contentType: 'image', mediaPath: 'telegram/-100/55/1.jpg', timestamp: 1700000000000 }
+        : { id: 'tg:-100:1', sender: 'self', content: 'root msg', timestamp: 1700000000000 }],
     children: withBranch ? [{ layerId: 'B', branchFromMessageId: 'tg:-100:1' }] : [],
   };
 
@@ -213,6 +215,26 @@ describe('web component behavior (index.html)', () => {
     await flush();
 
     expect(document.getElementById('messages').textContent).toContain('No messages in this layer');
+  });
+
+  it('renders image messages when mediaPath exists', async () => {
+    await boot({ view: makeView({ withImage: true }) });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const img = document.querySelector('#messages .msg img.media-image');
+    expect(img).toBeTruthy();
+    expect(img.getAttribute('src')).toContain('/media/telegram/-100/55/1.jpg');
   });
 
   it('falls back to current layer when saved layer id is stale', async () => {
