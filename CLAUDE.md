@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm install          # install dependencies
-npm run dev          # dev server with file-watching (uses data/dev.db, port 3001)
-npm start            # production server (uses data/portal.db)
-npm test             # run tests (Node built-in test runner)
-npm run seed         # seed dev.db with mock data
+npm run app:watch    # dev server with file-watching (uses .env, default port 3002)
+npm run app:start    # app server without watch (uses .env/ENV_FILE)
+npm test             # run tests
+npm run seed         # seed DB defined by env
 
 # Telegram ingestion (MTProto)
 npm run mtproto:once # MTProto user-account sync — one-shot (recommended first run)
@@ -37,6 +37,6 @@ The system has three layers that are strictly decoupled:
 
 - Message IDs are source-prefixed strings: `tg:{chatId}:{messageId}`. Inserts are idempotent (`INSERT OR IGNORE`).
 - `sender` in `TreeNavigator` is always `"self"` or `"other"` — the adapter/server maps source-specific user IDs to this binary before feeding messages into the navigator.
-- The `data/` directory is gitignored. `data/dev.db` is used by `npm run dev` and seed scripts; `data/portal.db` is the production DB.
+- The `data/` directory is gitignored. Local dev commonly uses `data/dev.db` via `.env`; production should point to a separate path via `DB_PATH` in its env file.
 - Tests use Jest (`npm test`).
 - Adding a new ingestion source means: write an adapter in `ingestion/` that produces the normalized message shape (`id`, `source`, `channel`, `senderId`, `content`, `timestamp`, `replyToId`, etc.) and calls `db.insertMessage()`.

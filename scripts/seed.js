@@ -45,6 +45,6 @@ const messages = [
 db.insertMessages(messages);
 
 console.log(`Seeded ${messages.length} mock messages into ${DB_PATH}`);
-console.log('Start with: DB_PATH=data/dev.db npm run dev');
+console.log('Start with: npm run app:watch (or npm run dev:all for app + ingest)');
 
 db.close();
