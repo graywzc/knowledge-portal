@@ -64,31 +64,43 @@ class TelegramUserIngestor {
     const ext = 'jpg';
     const relPath = path.join('telegram', String(dbMsg.chatId || this.chatId), String(dbMsg.topicId || 'no-topic'), `${msg.id}.${ext}`);
     const absPath = path.join(this.mediaRoot, relPath);
+    const baseMeta = { ...(dbMsg.rawMeta || {}), media_kind: 'photo' };
 
-    fs.mkdirSync(path.dirname(absPath), { recursive: true });
+    try {
+      fs.mkdirSync(path.dirname(absPath), { recursive: true });
 
-    if (!fs.existsSync(absPath)) {
-      await this.client.downloadMedia(msg, {
-        outputFile: absPath,
-      });
+      if (!fs.existsSync(absPath)) {
+        await this.client.downloadMedia(msg, {
+          outputFile: absPath,
+        });
+      }
+
+      let stat = null;
+      try { stat = fs.statSync(absPath); } catch {}
+
+      return {
+        ...dbMsg,
+        contentType: 'image',
+        mediaPath: relPath,
+        mediaMime: 'image/jpeg',
+        mediaSize: stat?.size || null,
+        mediaWidth: Number.isFinite(msg.photo?.w) ? msg.photo.w : null,
+        mediaHeight: Number.isFinite(msg.photo?.h) ? msg.photo.h : null,
+        rawMeta: baseMeta,
+      };
+    } catch (_e) {
+      // Non-blocking media failure: keep ingest moving.
+      return {
+        ...dbMsg,
+        contentType: 'image',
+        mediaPath: null,
+        mediaMime: 'image/jpeg',
+        mediaSize: null,
+        mediaWidth: Number.isFinite(msg.photo?.w) ? msg.photo.w : null,
+        mediaHeight: Number.isFinite(msg.photo?.h) ? msg.photo.h : null,
+        rawMeta: baseMeta,
+      };
     }
-
-    let stat = null;
-    try { stat = fs.statSync(absPath); } catch {}
-
-    return {
-      ...dbMsg,
-      contentType: 'image',
-      mediaPath: relPath,
-      mediaMime: 'image/jpeg',
-      mediaSize: stat?.size || null,
-      mediaWidth: Number.isFinite(msg.photo?.w) ? msg.photo.w : null,
-      mediaHeight: Number.isFinite(msg.photo?.h) ? msg.photo.h : null,
-      rawMeta: {
-        ...(dbMsg.rawMeta || {}),
-        media_kind: 'photo',
-      },
-    };
   }
 
   _toDbMessage(msg) {
