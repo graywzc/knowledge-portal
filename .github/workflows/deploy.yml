@@ -26,6 +26,17 @@ jobs:
         with:
           ref: main
 
+      - name: Resolve deploy SHA
+        id: resolve_sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
@@ -47,9 +58,10 @@ jobs:
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SHA: ${{ steps.resolve_sha.outputs.sha }}
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" << 'EOF'
+          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" "DEPLOY_SHA='${DEPLOY_SHA}' bash -s" << 'EOF'
             set -euo pipefail
 
             BASE_DIR="/opt/knowledge-portal"
@@ -70,9 +82,8 @@ jobs:
             fi
 
             cd "$APP_DIR"
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            git fetch origin --prune
+            git checkout -f "$DEPLOY_SHA"
 
             npm ci
             npm test
