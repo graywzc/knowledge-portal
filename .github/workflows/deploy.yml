@@ -78,7 +78,7 @@ jobs:
             pm2 delete knowledge-portal-app >/dev/null 2>&1 || true
             pm2 delete knowledge-portal-ingest >/dev/null 2>&1 || true
 
-            ENV_FILE="$SHARED_ENV" pm2 start "npm run start:prod" --name knowledge-portal-app
-            ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:prod:loop" --name knowledge-portal-ingest
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run app:start" --name knowledge-portal-app
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:loop" --name knowledge-portal-ingest
             pm2 save
           EOF

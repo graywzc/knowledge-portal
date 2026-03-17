@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS messages (
   reply_to_id   TEXT,                    -- id of message being replied to (null if none)
   content       TEXT NOT NULL,
   content_type  TEXT NOT NULL DEFAULT 'text',  -- "text", "image", "file", etc.
+  media_path    TEXT,                    -- relative local media path, e.g. telegram/-100/55/123.jpg
+  media_mime    TEXT,                    -- e.g. image/jpeg
+  media_size    INTEGER,                 -- bytes
+  media_width   INTEGER,
+  media_height  INTEGER,
   timestamp     INTEGER NOT NULL,        -- epoch ms
   raw_meta      TEXT,                    -- source-specific metadata as JSON
   created_at    INTEGER NOT NULL DEFAULT (unixepoch() * 1000)

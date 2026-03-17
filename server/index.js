@@ -18,6 +18,9 @@ function createApp({ dbPath } = {}) {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../web/public')));
 
+  const MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(process.cwd(), 'media');
+  app.use('/media', express.static(MEDIA_ROOT));
+
 // --- Helper: build tree view from DB messages ---
 
 function buildTree(source, channel) {
@@ -58,6 +61,11 @@ function buildTree(source, channel) {
       sender,
       replyToId: msg.reply_to_id || null,
       content: msg.content,
+      contentType: msg.content_type || 'text',
+      mediaPath: msg.media_path || null,
+      mediaMime: msg.media_mime || null,
+      mediaWidth: msg.media_width,
+      mediaHeight: msg.media_height,
       timestamp: msg.timestamp,
       entities,
     });

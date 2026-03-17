@@ -44,6 +44,8 @@
     .msg th { background: #eef2ff; }
     .msg blockquote { border-left: 3px solid #94a3b8; padding-left: 10px; margin: 8px 0; color: #4b5563; }
     .msg ul, .msg ol { padding-left: 20px; margin: 8px 0; }
+    .msg .media-image { display: block; width: 100%; max-width: 520px; border-radius: 10px; border: 1px solid #cfd6e6; margin: 6px 0 8px; background: #e9eef7; }
+    .msg .media-caption { margin-top: 2px; }
     .msg.self { background: #d1e7ff; margin-left: auto; }
     .msg.other, .msg.bot { background: #fff; border: 1px solid #ddd; }
     .msg .meta { font-size: 11px; color: #888; margin-top: 4px; }
@@ -65,6 +67,7 @@
     body.dark .msg blockquote { color: #b8c2d4; border-left-color: #64748b; }
     body.dark .msg .code-card { border-color: #2f3a52; }
     body.dark .msg .code-header { background: #29425f; color: #d8e8ff; }
+    body.dark .msg .media-image { border-color: #2f3a52; background: #1a2435; }
     .msg .branch-badge { display: inline-block; background: #4a6cf7; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; cursor: pointer; }
 
     #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
@@ -285,6 +288,11 @@
       }
     }
 
+    function mediaUrlFromPath(mediaPath) {
+      const p = String(mediaPath || '').replace(/^\/+/, '');
+      return p ? `${appBasePath}/media/${encodeURI(p)}` : null;
+    }
+
     function showLayer(layerId, focusMessageId = null) {
       if (!viewState) return;
       currentLayerId = layerId;
@@ -321,7 +329,20 @@
         const el = document.createElement('div');
         el.className = `msg ${m.sender}`;
         el.setAttribute('data-msg-id', m.id);
-        let html = renderRichContent(m.content, m.entities);
+        let html = '';
+
+        if (m.contentType === 'image' && m.mediaPath) {
+          const mediaUrl = mediaUrlFromPath(m.mediaPath);
+          if (mediaUrl) {
+            html += `<img class="media-image" src="${escapeHtml(mediaUrl)}" alt="image ${escapeHtml(getShortChatId(m.id))}" loading="lazy" />`;
+          }
+          if (m.content && m.content !== '[media]') {
+            html += `<div class="media-caption">${renderRichContent(m.content, m.entities)}</div>`;
+          }
+        } else {
+          html += renderRichContent(m.content, m.entities);
+        }
+
         html += `<div class="meta">${m.sender}`;
         if (m.replyToId) html += ` · reply to ${m.replyToId}`;
         if (branchPoints[m.id]) {

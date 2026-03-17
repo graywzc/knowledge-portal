@@ -14,6 +14,7 @@ class TelegramUserIngestor {
     this.chatId = String(opts.chatId);
     this.topicId = opts.topicId ? Number(opts.topicId) : null;
     this.sessionPath = opts.sessionPath || path.join(process.cwd(), 'data/telegram_user.session');
+    this.mediaRoot = opts.mediaRoot || path.join(process.cwd(), 'media');
 
     const sessionString = fs.existsSync(this.sessionPath)
       ? fs.readFileSync(this.sessionPath, 'utf8').trim()
@@ -54,6 +55,40 @@ class TelegramUserIngestor {
     if (!this.topicId) return true;
     const topId = msg.replyTo?.replyToTopId || null;
     return topId === this.topicId || msg.id === this.topicId;
+  }
+
+  async _attachImageMedia(dbMsg, msg) {
+    const hasPhoto = Boolean(msg.photo);
+    if (!hasPhoto) return dbMsg;
+
+    const ext = 'jpg';
+    const relPath = path.join('telegram', String(dbMsg.chatId || this.chatId), String(dbMsg.topicId || 'no-topic'), `${msg.id}.${ext}`);
+    const absPath = path.join(this.mediaRoot, relPath);
+
+    fs.mkdirSync(path.dirname(absPath), { recursive: true });
+
+    if (!fs.existsSync(absPath)) {
+      await this.client.downloadMedia(msg, {
+        outputFile: absPath,
+      });
+    }
+
+    let stat = null;
+    try { stat = fs.statSync(absPath); } catch {}
+
+    return {
+      ...dbMsg,
+      contentType: 'image',
+      mediaPath: relPath,
+      mediaMime: 'image/jpeg',
+      mediaSize: stat?.size || null,
+      mediaWidth: Number.isFinite(msg.photo?.w) ? msg.photo.w : null,
+      mediaHeight: Number.isFinite(msg.photo?.h) ? msg.photo.h : null,
+      rawMeta: {
+        ...(dbMsg.rawMeta || {}),
+        media_kind: 'photo',
+      },
+    };
   }
 
   _toDbMessage(msg) {
@@ -133,7 +168,8 @@ class TelegramUserIngestor {
       if (!this._inTopic(msg)) continue;
       if (lastId && msg.id <= (lastId - normalizedReplay)) continue; // safety guard
 
-      const dbMsg = this._toDbMessage(msg);
+      let dbMsg = this._toDbMessage(msg);
+      dbMsg = await this._attachImageMedia(dbMsg, msg);
       this.db.insertMessage(dbMsg);
       ingested++;
       if (msg.id > maxSeen) maxSeen = msg.id;

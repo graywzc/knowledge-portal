@@ -103,6 +103,33 @@ describe('Database', () => {
     assert.strictEqual(db.getPrimaryTelegramChatId(), '-100a');
   });
 
+  it('persists media columns for image messages', () => {
+    const db = createTestDb();
+
+    db.insertMessage({
+      id: 'tg:-100:img1',
+      source: 'telegram',
+      chatId: '-100',
+      topicId: '55',
+      senderId: 'u1',
+      content: '[media]',
+      contentType: 'image',
+      mediaPath: 'telegram/-100/55/img1.jpg',
+      mediaMime: 'image/jpeg',
+      mediaSize: 2048,
+      mediaWidth: 1280,
+      mediaHeight: 720,
+      timestamp: 1000,
+    });
+
+    const row = db.getMessage('tg:-100:img1');
+    assert.strictEqual(row.media_path, 'telegram/-100/55/img1.jpg');
+    assert.strictEqual(row.media_mime, 'image/jpeg');
+    assert.strictEqual(row.media_size, 2048);
+    assert.strictEqual(row.media_width, 1280);
+    assert.strictEqual(row.media_height, 720);
+  });
+
   it('derives telegram topic names from metadata then first text fallback', () => {
     const db = createTestDb();
 
