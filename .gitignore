@@ -10,5 +10,6 @@ shared/
 *.db-shm
 *.session
 .idea/
+*.iml
 
 coverage/
