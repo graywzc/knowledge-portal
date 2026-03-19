@@ -120,6 +120,8 @@
     let viewState = null;
     let expandedNodes = new Set(['A']);
     let isSending = false;
+    let realtimeStream = null;
+    let realtimeRefreshPending = false;
 
     const md = window.markdownit({
       html: false,
@@ -175,6 +177,41 @@
       const composer = document.getElementById('composer');
       const enabled = (currentSource === 'telegram' && !!currentChannel);
       composer.classList.toggle('hidden', !enabled);
+    }
+
+    async function refreshCurrentView() {
+      if (realtimeRefreshPending) return;
+      if (!currentSource || !currentChannel) return;
+      realtimeRefreshPending = true;
+      try {
+        await loadView(currentSource, currentChannel);
+      } catch (_) {
+      } finally {
+        realtimeRefreshPending = false;
+      }
+    }
+
+    function stopRealtimeStream() {
+      if (realtimeStream) {
+        realtimeStream.close();
+        realtimeStream = null;
+      }
+    }
+
+    function startRealtimeStream() {
+      stopRealtimeStream();
+      if (!currentSource || !currentChannel) return;
+      if (!window.EventSource) return;
+
+      const url = `${appBasePath}/api/stream?source=${encodeURIComponent(currentSource)}&channel=${encodeURIComponent(currentChannel)}`;
+      realtimeStream = new EventSource(url);
+      realtimeStream.addEventListener('update', () => {
+        if (document.hidden) return;
+        refreshCurrentView();
+      });
+      realtimeStream.onerror = () => {
+        // EventSource will auto-reconnect; keep handler to avoid uncaught noise.
+      };
     }
 
     async function sendCurrentMessage() {
@@ -245,6 +282,7 @@
             currentTopicName = t.name || '';
             sel.value = t.id;
             await loadView(currentSource, currentChannel);
+            startRealtimeStream();
           };
           topicList.appendChild(row);
         });
@@ -540,6 +578,7 @@
       currentChannel = '';
       currentTopicName = '';
       updateComposerVisibility();
+      stopRealtimeStream();
       if (currentSource) await loadChannels(currentSource);
     };
 
@@ -548,10 +587,24 @@
       const opt = e.target.selectedOptions && e.target.selectedOptions[0];
       currentTopicName = opt ? opt.textContent : '';
       updateComposerVisibility();
-      if (currentSource && currentChannel) await loadView(currentSource, currentChannel);
+      if (currentSource && currentChannel) {
+        await loadView(currentSource, currentChannel);
+        startRealtimeStream();
+      } else {
+        stopRealtimeStream();
+      }
     };
 
     document.getElementById('composer-send').onclick = sendCurrentMessage;
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      refreshCurrentView();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      stopRealtimeStream();
+    });
 
     applyThemeByTime();
     setInterval(applyThemeByTime, 60 * 1000);

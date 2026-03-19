@@ -124,6 +124,40 @@ app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
   res.json(db.getMessages(req.params.source, req.params.channel));
 });
 
+/** Realtime stream for one source/channel (SSE) */
+app.get('/api/stream', (req, res) => {
+  const source = String(req.query.source || '');
+  const channel = String(req.query.channel || '');
+  if (!source || !channel) return res.status(400).json({ error: 'source and channel required' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const writeUpdate = () => {
+    const data = JSON.stringify({ source, channel, at: Date.now() });
+    res.write(`event: update\ndata: ${data}\n\n`);
+  };
+
+  let lastSig = db.getChannelSignature(source, channel);
+  res.write(`event: ready\ndata: ${JSON.stringify({ source, channel })}\n\n`);
+
+  const timer = setInterval(() => {
+    const nextSig = db.getChannelSignature(source, channel);
+    if (nextSig !== lastSig) {
+      lastSig = nextSig;
+      writeUpdate();
+    } else {
+      res.write(': keep-alive\n\n');
+    }
+  }, 1200);
+
+  req.on('close', () => {
+    clearInterval(timer);
+  });
+});
+
 /** Send telegram message (text only) */
 app.post('/api/telegram/send', async (req, res) => {
   try {
