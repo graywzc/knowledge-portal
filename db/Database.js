@@ -3,6 +3,15 @@ const fs = require('fs');
 const path = require('path');
 
 class Database {
+  #hashString(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+
   constructor(dbPath) {
     this.db = new BetterSqlite3(dbPath);
     this.db.pragma('journal_mode = WAL');
@@ -227,6 +236,24 @@ class Database {
        LIMIT 1`
     ).get();
     return row ? String(row.chat_id) : null;
+  }
+
+  getChannelSignature(source, channel, limit = 80) {
+    const scope = String(channel);
+    const rows = this.db.prepare(
+      `SELECT id, content, raw_meta, media_path, timestamp
+       FROM messages
+       WHERE source = ?
+         AND (channel = ? OR topic_id = ? OR chat_id = ?)
+       ORDER BY timestamp DESC, id DESC
+       LIMIT ?`
+    ).all(source, scope, scope, scope, Number(limit));
+
+    const payload = rows
+      .map((r) => `${r.id}|${r.timestamp || ''}|${r.content || ''}|${r.media_path || ''}|${r.raw_meta || ''}`)
+      .join('\n');
+
+    return this.#hashString(payload);
   }
 
   close() {
