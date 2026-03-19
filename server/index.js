@@ -2,10 +2,11 @@ const express = require('express');
 const path = require('path');
 const { Database } = require('../db/Database');
 const { TreeNavigator } = require('../core/TreeNavigator');
+const { TelegramSender } = require('../services/TelegramSender');
 
 const PORT = process.env.PORT || 3000;
 
-function createApp({ dbPath } = {}) {
+function createApp({ dbPath, telegramSender } = {}) {
   const app = express();
   const DB_PATH = dbPath || process.env.DB_PATH || path.join(__dirname, '../data/portal.db');
 
@@ -14,6 +15,7 @@ function createApp({ dbPath } = {}) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
   const db = new Database(DB_PATH);
+  const sender = telegramSender || new TelegramSender();
 
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../web/public')));
@@ -120,6 +122,35 @@ app.get('/api/sources/:source/channels/:channel/view', (req, res) => {
 /** Raw messages for a channel (for debugging) */
 app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
   res.json(db.getMessages(req.params.source, req.params.channel));
+});
+
+/** Send telegram message (text only) */
+app.post('/api/telegram/send', async (req, res) => {
+  try {
+    const { chatId, text, replyToId } = req.body || {};
+    const resolvedChatId = chatId
+      || process.env.TG_CHAT_ID
+      || process.env.TELEGRAM_CHAT_ID
+      || db.getPrimaryTelegramChatId();
+
+    if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
+    if (!text || !String(text).trim()) return res.status(400).json({ error: 'text required' });
+    if (String(text).length > 4096) return res.status(400).json({ error: 'text too long (max 4096)' });
+
+    const result = await sender.sendText({
+      chatId: String(resolvedChatId),
+      text: String(text),
+      replyToId,
+    });
+
+    return res.json(result);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (msg.includes('required') || msg.includes('must be a numeric')) {
+      return res.status(400).json({ error: msg });
+    }
+    return res.status(500).json({ error: 'telegram send failed', detail: msg });
+  }
 });
 
   return app;
