@@ -71,6 +71,15 @@
     .msg .branch-badge { display: inline-block; background: #4a6cf7; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; cursor: pointer; }
 
     #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
+
+    #composer { border-top: 1px solid #ddd; background: #fff; padding: 10px 12px; display: flex; gap: 8px; align-items: center; }
+    #composer.hidden { display: none; }
+    #composer-input { flex: 1; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; }
+    #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
+    #composer-send:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    body.dark #composer { background: #161a22; border-top-color: #2a2f3a; }
+    body.dark #composer-input { background: #0f1115; color: #e8eaed; border-color: #2f3644; }
   </style>
 </head>
 <body>
@@ -94,6 +103,10 @@
     <div id="messages">
       <div id="empty-state">Select a source and channel to view messages</div>
     </div>
+    <div id="composer" class="hidden">
+      <input id="composer-input" type="text" placeholder="Send a message to Telegram…" />
+      <button id="composer-send" type="button">Send</button>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
@@ -106,6 +119,7 @@
     let currentLayerId = 'A';
     let viewState = null;
     let expandedNodes = new Set(['A']);
+    let isSending = false;
 
     const md = window.markdownit({
       html: false,
@@ -155,6 +169,42 @@
       if (body) opts.body = JSON.stringify(body);
       const res = await fetch(`${appBasePath}/api${path}`, opts);
       return res.json();
+    }
+
+    function updateComposerVisibility() {
+      const composer = document.getElementById('composer');
+      const enabled = (currentSource === 'telegram' && !!currentChannel);
+      composer.classList.toggle('hidden', !enabled);
+    }
+
+    async function sendCurrentMessage() {
+      if (isSending) return;
+      if (currentSource !== 'telegram' || !currentChannel) return;
+
+      const input = document.getElementById('composer-input');
+      const btn = document.getElementById('composer-send');
+      const text = String(input.value || '').trim();
+      if (!text) return;
+
+      isSending = true;
+      btn.disabled = true;
+
+      try {
+        // For forum-topic sends (no explicit reply UX yet), anchor to topic root id
+        // so Telegram keeps the message in the selected topic.
+        const result = await api('POST', '/telegram/send', {
+          text,
+          replyToId: Number(currentChannel),
+        });
+        if (result && result.error) throw new Error(result.error);
+        input.value = '';
+        await loadView(currentSource, currentChannel);
+      } catch (e) {
+        alert('Send failed. Please try again.');
+      } finally {
+        isSending = false;
+        btn.disabled = false;
+      }
     }
 
     async function loadSources() {
@@ -235,6 +285,7 @@
       expandPathToLayer(currentLayerId);
       renderTree(viewState.tree);
       showLayer(currentLayerId);
+      updateComposerVisibility();
     }
 
     function layerTitle(layerId) {
@@ -486,6 +537,9 @@
 
     document.getElementById('source-select').onchange = async (e) => {
       currentSource = e.target.value;
+      currentChannel = '';
+      currentTopicName = '';
+      updateComposerVisibility();
       if (currentSource) await loadChannels(currentSource);
     };
 
@@ -493,11 +547,15 @@
       currentChannel = e.target.value;
       const opt = e.target.selectedOptions && e.target.selectedOptions[0];
       currentTopicName = opt ? opt.textContent : '';
+      updateComposerVisibility();
       if (currentSource && currentChannel) await loadView(currentSource, currentChannel);
     };
 
+    document.getElementById('composer-send').onclick = sendCurrentMessage;
+
     applyThemeByTime();
     setInterval(applyThemeByTime, 60 * 1000);
+    updateComposerVisibility();
     loadSources();
   </script>
 </body>
