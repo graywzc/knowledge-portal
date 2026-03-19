@@ -48,12 +48,32 @@ npm run mtproto:loop   # continuous sync
 npm run mtproto:reset-last-id -- 560   # optional: move checkpoint backward/forward
 ```
 
-### B) Debug utility: fetch one raw Telegram message payload
+### B) MTProto session init only (no DB sync)
+Use this when you just want to initialize/update Telegram login session.
+
+```bash
+npm run mtproto:login
+```
+
+### C) Debug utility: fetch one raw Telegram message payload
 Use this to inspect the exact MTProto payload for a specific message id (helpful for adapter/topic logic).
 
 ```bash
 node scripts/fetch-telegram-msg.js -1003826585913 1623
 ```
+
+### D) Debug utility: test Telegram sendText from CLI
+Sends a real Telegram message using `TelegramSender`.
+
+```bash
+node scripts/test-send-text.js <chatId> "<text>" [replyToId]
+
+# examples
+node scripts/test-send-text.js -1003826585913 "hello from CLI"
+node scripts/test-send-text.js -1003826585913 "reply test" 1623
+```
+
+If `replyToId` is omitted, the message is sent as a plain non-reply message.
 
 It reads credentials/session from:
 - `TG_API_ID` / `TG_API_HASH` (or `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`)

@@ -7,6 +7,7 @@
     "app:start": "node --env-file=${ENV_FILE:-.env} server/index.js",
     "app:watch": "node --env-file=${ENV_FILE:-.env} --watch server/index.js",
     "seed": "node --env-file=${ENV_FILE:-.env} scripts/seed.js",
+    "mtproto:login": "node --env-file=${ENV_FILE:-.env} scripts/mtproto-login.js",
     "mtproto:once": "node --env-file=${ENV_FILE:-.env} scripts/mtproto-sync.js once",
     "mtproto:loop": "node --env-file=${ENV_FILE:-.env} scripts/mtproto-sync.js loop",
     "mtproto:reset-last-id": "node --env-file=${ENV_FILE:-.env} scripts/reset-last-id.js",
