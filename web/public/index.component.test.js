@@ -38,7 +38,7 @@ function makeView({ empty = false, withBranch = false, withImage = false } = {})
 }
 
 function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topic 55' }] } = {}) {
-  return jest.fn(async (url) => {
+  return jest.fn(async (url, opts = {}) => {
     const u = String(url);
 
     if (u.endsWith('/api/sources')) return { json: async () => ['telegram'] };
@@ -49,6 +49,7 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
       };
     }
     if (u.endsWith('/api/sources/telegram/channels/55/view')) return { json: async () => view };
+    if (u.endsWith('/api/telegram/send') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
 
     throw new Error(`Unexpected fetch URL: ${u}`);
   });
@@ -275,5 +276,42 @@ describe('web component behavior (index.html)', () => {
 
     expect(document.getElementById('layer-header').textContent).toContain('branch msg');
     expect(document.querySelector('#tree .tree-node.active').textContent).toContain('branch msg');
+  });
+
+  it('anchors non-reply send to selected layer self message instead of topic root', async () => {
+    const view = makeView({ withBranch: true });
+    view.state.layers.B.messages = [
+      { id: 'tg:-100:2001', sender: 'self', content: 'b-self', timestamp: 1700000001000 },
+      { id: 'tg:-100:2002', sender: 'other', content: 'b-other', timestamp: 1700000002000 },
+    ];
+
+    localStorage.setItem('kp:lastLayer:telegram:55', 'B');
+    await boot({ view });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const input = document.getElementById('composer-input');
+    input.value = 'hello from B';
+    document.getElementById('composer-send').click();
+    await flush();
+    await flush();
+
+    const sendCall = window.fetch.mock.calls.find(([url, opts]) =>
+      String(url).includes('/api/telegram/send') && opts?.method === 'POST');
+    expect(sendCall).toBeTruthy();
+
+    const payload = JSON.parse(sendCall[1].body);
+    expect(payload.replyToId).toBe(2001);
+    expect(payload.text).toBe('hello from B');
   });
 });

@@ -214,6 +214,23 @@
       };
     }
 
+    function getSelectedLayerAnchorReplyId() {
+      const layer = viewState?.state?.layers?.[currentLayerId];
+      if (!layer || !Array.isArray(layer.messages)) return Number(currentChannel);
+
+      // Prefer replying to latest self message in the selected layer so replay
+      // deterministically resolves back to this same layer.
+      for (let i = layer.messages.length - 1; i >= 0; i--) {
+        const m = layer.messages[i];
+        if (m?.sender !== 'self') continue;
+        const n = Number(getShortChatId(m.id));
+        if (Number.isFinite(n)) return n;
+      }
+
+      // Fallback: topic anchor keeps the send in this forum topic.
+      return Number(currentChannel);
+    }
+
     async function sendCurrentMessage() {
       if (isSending) return;
       if (currentSource !== 'telegram' || !currentChannel) return;
@@ -227,11 +244,9 @@
       btn.disabled = true;
 
       try {
-        // For forum-topic sends (no explicit reply UX yet), anchor to topic root id
-        // so Telegram keeps the message in the selected topic.
         const result = await api('POST', '/telegram/send', {
           text,
-          replyToId: Number(currentChannel),
+          replyToId: getSelectedLayerAnchorReplyId(),
         });
         if (result && result.error) throw new Error(result.error);
         input.value = '';
