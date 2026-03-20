@@ -315,6 +315,44 @@ describe('web component behavior (index.html)', () => {
     expect(payload.text).toBe('hello from B');
   });
 
+  it('supports custom context-menu reply target and cancel', async () => {
+    await boot({ view: makeView() });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const msg = document.querySelector('#messages .msg');
+    msg.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+    await flush();
+
+    document.getElementById('ctx-reply-btn').click();
+    await flush();
+
+    expect(document.getElementById('reply-banner').textContent).toContain('Replying to #1');
+
+    const input = document.getElementById('composer-input');
+    input.value = 'reply by context menu';
+    document.getElementById('composer-send').click();
+    await flush();
+    await flush();
+
+    const sendCall = window.fetch.mock.calls.find(([url, opts]) =>
+      String(url).includes('/api/telegram/send') && opts?.method === 'POST');
+    const payload = JSON.parse(sendCall[1].body);
+    expect(payload.replyToId).toBe(1);
+
+    expect(document.getElementById('reply-banner').style.display).toBe('none');
+  });
+
   it('sends on Enter and keeps Shift+Enter for newline', async () => {
     await boot({ view: makeView() });
 
