@@ -100,8 +100,8 @@
       <select id="source-select"><option value="">Select source...</option></select>
     </div>
     <div>
-      <h2>Channel / Topic</h2>
-      <select id="channel-select"><option value="">Select channel...</option></select>
+      <h2>Topics</h2>
+      <select id="channel-select" style="display:none;"></select>
       <div id="topic-list" style="margin-top:8px; display:none;"></div>
     </div>
     <div>
@@ -316,27 +316,29 @@
         opt.value = s; opt.textContent = s;
         sel.appendChild(opt);
       });
+
+      if (sources.includes('telegram')) {
+        currentSource = 'telegram';
+        sel.value = 'telegram';
+        await loadChannels('telegram');
+      }
     }
 
     async function loadChannels(source) {
-      const channels = await api('GET', `/sources/${source}/channels`);
-      const sel = document.getElementById('channel-select');
-      sel.innerHTML = '<option value="">Select channel...</option>';
-      channels.forEach(c => {
-        const value = (typeof c === 'string') ? c : c.id;
-        const label = (typeof c === 'string') ? c : (c.name || c.id);
-        const opt = document.createElement('option');
-        opt.value = value; opt.textContent = label;
-        sel.appendChild(opt);
-      });
-
-      // For Telegram, show topic list ordered by most recent message.
       const topicList = document.getElementById('topic-list');
+      const sel = document.getElementById('channel-select');
+      topicList.style.display = 'block';
+      topicList.innerHTML = '';
+      sel.innerHTML = '';
+
       if (source === 'telegram') {
         const topics = await api('GET', '/telegram/topics');
-        topicList.style.display = 'block';
-        topicList.innerHTML = '';
         topics.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = t.name || t.id;
+          sel.appendChild(opt);
+
           const row = document.createElement('div');
           row.className = 'tree-node';
           row.textContent = `${t.name} (${t.messageCount})`;
@@ -344,15 +346,37 @@
             currentChannel = t.id;
             currentTopicName = t.name || '';
             sel.value = t.id;
+            updateComposerVisibility();
             await loadView(currentSource, currentChannel);
             startRealtimeStream();
           };
           topicList.appendChild(row);
         });
-      } else {
-        topicList.style.display = 'none';
-        topicList.innerHTML = '';
+        return;
       }
+
+      const channels = await api('GET', `/sources/${source}/channels`);
+      channels.forEach(c => {
+        const value = (typeof c === 'string') ? c : c.id;
+        const label = (typeof c === 'string') ? c : (c.name || c.id);
+
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        sel.appendChild(opt);
+
+        const row = document.createElement('div');
+        row.className = 'tree-node';
+        row.textContent = label;
+        row.onclick = async () => {
+          currentChannel = value;
+          currentTopicName = label;
+          sel.value = value;
+          updateComposerVisibility();
+          await loadView(currentSource, currentChannel);
+        };
+        topicList.appendChild(row);
+      });
     }
 
     function topicStateKey(source, channel) {
@@ -681,7 +705,7 @@
       updateComposerVisibility();
       if (currentSource && currentChannel) {
         await loadView(currentSource, currentChannel);
-        startRealtimeStream();
+        if (currentSource === 'telegram') startRealtimeStream();
       } else {
         stopRealtimeStream();
       }

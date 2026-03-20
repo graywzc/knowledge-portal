@@ -171,7 +171,7 @@ describe('web component behavior (index.html)', () => {
     backLink.click();
     await flush();
 
-    expect(document.getElementById('layer-header').textContent).toContain('Topic 55');
+    expect(document.getElementById('layer-header').textContent).toContain('[V1] Tennis Social Media App');
   });
 
   it('supports tree-node click navigation to child layer', async () => {
@@ -255,7 +255,7 @@ describe('web component behavior (index.html)', () => {
     await flush();
 
     expect(document.querySelectorAll('#messages .msg').length).toBe(1);
-    expect(document.getElementById('layer-header').textContent).toContain('Topic 55');
+    expect(document.getElementById('layer-header').textContent).toContain('[V1] Tennis Social Media App');
   });
 
   it('restores valid saved layer from localStorage', async () => {
