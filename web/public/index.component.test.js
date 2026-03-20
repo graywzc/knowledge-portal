@@ -387,4 +387,54 @@ describe('web component behavior (index.html)', () => {
       String(url).includes('/api/telegram/send') && opts?.method === 'POST');
     expect(sendCalls.length).toBe(1);
   });
+
+  it('keeps previously expanded tree branches when navigating to another layer', async () => {
+    const view = {
+      currentLayerId: 'A',
+      tree: {
+        id: 'A',
+        messageCount: 1,
+        children: [
+          { id: 'B', messageCount: 1, branchFromMessageId: 'tg:-100:1', children: [
+            { id: 'D', messageCount: 1, branchFromMessageId: 'tg:-100:2', children: [] },
+          ] },
+          { id: 'C', messageCount: 1, branchFromMessageId: 'tg:-100:1', children: [] },
+        ],
+      },
+      state: {
+        layers: {
+          A: { id: 'A', parentLayerId: null, branchFromMessageId: null, messages: [{ id: 'tg:-100:1', sender: 'self', content: 'root', timestamp: 1 }], children: [{ layerId: 'B', branchFromMessageId: 'tg:-100:1' }, { layerId: 'C', branchFromMessageId: 'tg:-100:1' }] },
+          B: { id: 'B', parentLayerId: 'A', branchFromMessageId: 'tg:-100:1', messages: [{ id: 'tg:-100:2', sender: 'other', content: 'b', timestamp: 2 }], children: [{ layerId: 'D', branchFromMessageId: 'tg:-100:2' }] },
+          C: { id: 'C', parentLayerId: 'A', branchFromMessageId: 'tg:-100:1', messages: [{ id: 'tg:-100:3', sender: 'other', content: 'c', timestamp: 3 }], children: [] },
+          D: { id: 'D', parentLayerId: 'B', branchFromMessageId: 'tg:-100:2', messages: [{ id: 'tg:-100:4', sender: 'other', content: 'd', timestamp: 4 }], children: [] },
+        },
+      },
+    };
+
+    await boot({ view });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const bToggle = Array.from(document.querySelectorAll('#tree .tree-node')).find((n) => n.textContent.includes('b')).querySelector('.tree-toggle');
+    bToggle.click();
+    await flush();
+
+    let layerNodes = Array.from(document.querySelectorAll('#tree .tree-node'));
+    const cNode = layerNodes.find((n) => n.textContent.includes('c'));
+    cNode.click();
+    await flush();
+
+    layerNodes = Array.from(document.querySelectorAll('#tree .tree-node')).map((n) => n.textContent);
+    expect(layerNodes.some((t) => t.includes('d'))).toBe(true);
+  });
 });
