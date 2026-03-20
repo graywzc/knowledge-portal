@@ -72,14 +72,25 @@
 
     #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
 
-    #composer { border-top: 1px solid #ddd; background: #fff; padding: 10px 12px; display: flex; gap: 8px; align-items: center; }
+    #composer { border-top: 1px solid #ddd; background: #fff; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
     #composer.hidden { display: none; }
+    #reply-banner { display: none; font-size: 12px; color: #2d4f73; background: #e9f2ff; border: 1px solid #c8dcff; border-radius: 8px; padding: 6px 10px; }
+    #reply-banner .close { float: right; cursor: pointer; font-weight: 700; }
+    #composer-row { display: flex; gap: 8px; align-items: center; }
     #composer-input { flex: 1; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; min-height: 44px; resize: vertical; }
     #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
     #composer-send:disabled { opacity: 0.6; cursor: not-allowed; }
 
+    #msg-context-menu { position: fixed; display: none; z-index: 9999; min-width: 120px; background: #fff; border: 1px solid #d8deea; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.16); padding: 4px; }
+    #msg-context-menu button { width: 100%; border: none; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    #msg-context-menu button:hover { background: #edf2ff; }
+
     body.dark #composer { background: #161a22; border-top-color: #2a2f3a; }
+    body.dark #reply-banner { color: #d7e6ff; background: #243753; border-color: #345179; }
     body.dark #composer-input { background: #0f1115; color: #e8eaed; border-color: #2f3644; }
+    body.dark #msg-context-menu { background: #1a1f29; border-color: #2f3644; }
+    body.dark #msg-context-menu button { color: #e8eaed; }
+    body.dark #msg-context-menu button:hover { background: #2a3344; }
   </style>
 </head>
 <body>
@@ -104,9 +115,15 @@
       <div id="empty-state">Select a source and channel to view messages</div>
     </div>
     <div id="composer" class="hidden">
-      <textarea id="composer-input" placeholder="Send a message to Telegram…"></textarea>
-      <button id="composer-send" type="button">Send</button>
+      <div id="reply-banner"></div>
+      <div id="composer-row">
+        <textarea id="composer-input" placeholder="Send a message to Telegram…"></textarea>
+        <button id="composer-send" type="button">Send</button>
+      </div>
     </div>
+  </div>
+  <div id="msg-context-menu">
+    <button id="ctx-reply-btn" type="button">Reply</button>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
@@ -122,6 +139,8 @@
     let isSending = false;
     let realtimeStream = null;
     let realtimeRefreshPending = false;
+    let replyTarget = null;
+    let contextTarget = null;
 
     const md = window.markdownit({
       html: false,
@@ -177,6 +196,34 @@
       const composer = document.getElementById('composer');
       const enabled = (currentSource === 'telegram' && !!currentChannel);
       composer.classList.toggle('hidden', !enabled);
+    }
+
+    function setReplyTarget(target) {
+      replyTarget = target;
+      const banner = document.getElementById('reply-banner');
+      if (!replyTarget) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+      }
+      banner.style.display = 'block';
+      banner.innerHTML = `Replying to #${escapeHtml(String(getShortChatId(replyTarget.id)))} · ${escapeHtml(String(replyTarget.preview || ''))}<span class="close" id="reply-cancel">×</span>`;
+      const cancel = document.getElementById('reply-cancel');
+      if (cancel) cancel.onclick = () => setReplyTarget(null);
+    }
+
+    function openContextMenu(x, y, msgInfo) {
+      contextTarget = msgInfo;
+      const menu = document.getElementById('msg-context-menu');
+      menu.style.display = 'block';
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+    }
+
+    function closeContextMenu() {
+      const menu = document.getElementById('msg-context-menu');
+      menu.style.display = 'none';
+      contextTarget = null;
     }
 
     async function refreshCurrentView() {
@@ -246,10 +293,11 @@
       try {
         const result = await api('POST', '/telegram/send', {
           text,
-          replyToId: getSelectedLayerAnchorReplyId(),
+          replyToId: replyTarget ? Number(getShortChatId(replyTarget.id)) : getSelectedLayerAnchorReplyId(),
         });
         if (result && result.error) throw new Error(result.error);
         input.value = '';
+        setReplyTarget(null);
         await loadView(currentSource, currentChannel);
       } catch (e) {
         alert('Send failed. Please try again.');
@@ -433,6 +481,8 @@
         const el = document.createElement('div');
         el.className = `msg ${m.sender}`;
         el.setAttribute('data-msg-id', m.id);
+        el.setAttribute('data-msg-preview', String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 80));
+        el.setAttribute('data-msg-sender', m.sender);
         let html = '';
 
         if (m.contentType === 'image' && m.mediaPath) {
@@ -576,7 +626,10 @@
 
     document.getElementById('messages').addEventListener('click', async (e) => {
       const btn = e.target.closest('.copy-btn');
-      if (!btn) return;
+      if (!btn) {
+        closeContextMenu();
+        return;
+      }
       const id = btn.getAttribute('data-copy-id');
       const src = document.querySelector(`code[data-copy-src="${id}"]`);
       if (!src) return;
@@ -586,6 +639,27 @@
         btn.textContent = '✓';
         setTimeout(() => { btn.textContent = old; }, 900);
       } catch (_) {}
+    });
+
+    document.getElementById('messages').addEventListener('contextmenu', (e) => {
+      const msg = e.target.closest('.msg');
+      if (!msg) return;
+      e.preventDefault();
+      const info = {
+        id: msg.getAttribute('data-msg-id'),
+        preview: msg.getAttribute('data-msg-preview') || '',
+        sender: msg.getAttribute('data-msg-sender') || '',
+      };
+      openContextMenu(e.clientX, e.clientY, info);
+    });
+
+    document.getElementById('ctx-reply-btn').onclick = () => {
+      if (contextTarget) setReplyTarget(contextTarget);
+      closeContextMenu();
+    };
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#msg-context-menu')) closeContextMenu();
     });
 
     document.getElementById('source-select').onchange = async (e) => {
