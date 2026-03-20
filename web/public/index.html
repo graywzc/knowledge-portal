@@ -521,6 +521,10 @@
           target.style.outline = '2px solid #4a6cf7';
           setTimeout(() => { target.style.outline = ''; }, 1200);
         }
+      } else {
+        requestAnimationFrame(() => {
+          msgDiv.scrollTop = msgDiv.scrollHeight;
+        });
       }
     }
 
