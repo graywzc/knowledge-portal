@@ -314,4 +314,39 @@ describe('web component behavior (index.html)', () => {
     expect(payload.replyToId).toBe(2001);
     expect(payload.text).toBe('hello from B');
   });
+
+  it('sends on Enter and keeps Shift+Enter for newline', async () => {
+    await boot({ view: makeView() });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const input = document.getElementById('composer-input');
+
+    input.value = 'line1';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
+    await flush();
+
+    const sendCallsAfterShiftEnter = window.fetch.mock.calls.filter(([url, opts]) =>
+      String(url).includes('/api/telegram/send') && opts?.method === 'POST');
+    expect(sendCallsAfterShiftEnter.length).toBe(0);
+
+    input.value = 'send by enter';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await flush();
+    await flush();
+
+    const sendCalls = window.fetch.mock.calls.filter(([url, opts]) =>
+      String(url).includes('/api/telegram/send') && opts?.method === 'POST');
+    expect(sendCalls.length).toBe(1);
+  });
 });
