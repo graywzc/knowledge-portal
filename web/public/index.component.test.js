@@ -439,13 +439,16 @@ describe('web component behavior (index.html)', () => {
     expect(layerNodes.some((t) => t.includes('d'))).toBe(true);
   });
 
-  it('calls topic delete endpoint from topic list delete button', async () => {
+  it('calls topic delete endpoint from topic right-click menu', async () => {
     jest.spyOn(window, 'confirm').mockReturnValue(true);
     await boot({ view: makeView() });
 
-    const delBtn = document.querySelector('#topic-list .topic-del-btn');
-    expect(delBtn).toBeTruthy();
-    delBtn.click();
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    expect(topicRow).toBeTruthy();
+    topicRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+    await flush();
+
+    document.getElementById('ctx-delete-topic-btn').click();
     await flush();
 
     const deleteCalls = window.fetch.mock.calls.filter(([url, opts]) =>
