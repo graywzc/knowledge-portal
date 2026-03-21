@@ -16,9 +16,8 @@ jest.mock('telegram', () => ({
   })),
   Api: {
     channels: {
-      CreateForumTopic: class {
-        constructor(args) { this.args = args; }
-      },
+      CreateForumTopic: class { constructor(args) { this.args = args; } },
+      DeleteTopicHistory: class { constructor(args) { this.args = args; } },
     },
   },
 }));
@@ -44,18 +43,8 @@ describe('TelegramSender', () => {
   it('creates forum topic via MTProto', async () => {
     mockInvoke.mockResolvedValueOnce({
       updates: [
-        {
-          message: {
-            id: 41,
-            action: { className: 'MessageActionTopicCreate', title: 'Old Topic' },
-          },
-        },
-        {
-          message: {
-            id: 55,
-            action: { className: 'MessageActionTopicCreate', title: 'New Topic' },
-          },
-        },
+        { message: { id: 41, action: { className: 'MessageActionTopicCreate', title: 'Old Topic' } } },
+        { message: { id: 55, action: { className: 'MessageActionTopicCreate', title: 'New Topic' } } },
       ],
     });
 
@@ -63,21 +52,24 @@ describe('TelegramSender', () => {
     const out = await sender.createTopic({ chatId: '-100', title: 'New Topic' });
 
     expect(mockInvoke).toHaveBeenCalled();
-    expect(out).toEqual({
-      ok: true,
-      chatId: '-100',
-      title: 'New Topic',
-      topicId: 55,
-    });
+    expect(out).toEqual({ ok: true, chatId: '-100', title: 'New Topic', topicId: 55 });
+  });
+
+  it('deletes topic via MTProto', async () => {
+    mockInvoke.mockResolvedValueOnce({ ok: true });
+
+    const sender = new TelegramSender({ apiId: '1', apiHash: 'h', sessionPath: '/tmp/session' });
+    const out = await sender.deleteTopic({ chatId: '-100', topicId: 55 });
+
+    expect(mockInvoke).toHaveBeenCalled();
+    expect(out).toEqual({ ok: true, chatId: '-100', topicId: 55 });
   });
 
   it('sends plain message without forcing reply target', async () => {
     const sender = new TelegramSender({ apiId: '1', apiHash: 'h', sessionPath: '/tmp/session' });
     const out = await sender.sendText({ chatId: '-100', text: 'hello' });
 
-    expect(mockSendMessage).toHaveBeenCalledWith({ id: 'entity' }, {
-      message: 'hello',
-    });
+    expect(mockSendMessage).toHaveBeenCalledWith({ id: 'entity' }, { message: 'hello' });
     expect(out.ok).toBe(true);
     expect(out.telegramMessageId).toBe(4321);
     expect(out.chatId).toBe('-100');

@@ -67,17 +67,35 @@ class TelegramSender {
     }
 
     const exact = candidates.find((c) => c.title === normalizedTitle);
-    if (exact) {
-      topicId = exact.id;
-    } else if (candidates.length) {
-      topicId = candidates[candidates.length - 1].id;
-    }
+    if (exact) topicId = exact.id;
+    else if (candidates.length) topicId = candidates[candidates.length - 1].id;
 
     return {
       ok: true,
       chatId: String(chatId),
       title: String(title).trim(),
       topicId,
+    };
+  }
+
+  async deleteTopic({ chatId, topicId } = {}) {
+    if (!chatId) throw new Error('chatId required');
+    if (topicId === undefined || topicId === null || topicId === '') throw new Error('topicId required');
+    const resolvedTopicId = Number(topicId);
+    if (!Number.isFinite(resolvedTopicId)) throw new Error('topicId required');
+
+    await this.#ensureClient();
+
+    const entity = await this.client.getEntity(String(chatId));
+    await this.client.invoke(new Api.channels.DeleteTopicHistory({
+      channel: entity,
+      topMsgId: resolvedTopicId,
+    }));
+
+    return {
+      ok: true,
+      chatId: String(chatId),
+      topicId: resolvedTopicId,
     };
   }
 

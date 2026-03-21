@@ -19,6 +19,9 @@
     .sidebar-mini-btn:hover { background: #2a4373; }
 
     .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .topic-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topic-del-btn { border: 1px solid #644; background: #3a1f26; color: #ffd2da; border-radius: 6px; padding: 1px 6px; font-size: 11px; cursor: pointer; }
+    .topic-del-btn:hover { background: #4b2730; }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
     .tree-node.active { background: rgba(100,140,255,0.3); }
     .tree-toggle { width: 16px; text-align: center; font-weight: 700; opacity: 0.9; cursor: pointer; user-select: none; }
@@ -358,6 +361,28 @@
       }
     }
 
+    async function deleteTopicFromUI(topicId, topicName) {
+      if (currentSource !== 'telegram') return;
+      const ok = window.confirm(`Delete topic "${topicName}"? This will delete topic history on Telegram.`);
+      if (!ok) return;
+
+      const result = await api('POST', '/telegram/topics/delete', { topicId: Number(topicId) });
+      if (result?.error) {
+        alert(`Delete topic failed: ${result.error}`);
+        return;
+      }
+
+      if (String(currentChannel) === String(topicId)) {
+        currentChannel = '';
+        currentTopicName = '';
+        document.getElementById('messages').innerHTML = '<div id="empty-state">Select a topic to view messages</div>';
+        updateComposerVisibility();
+        stopRealtimeStream();
+      }
+
+      await loadChannels('telegram');
+    }
+
     async function loadChannels(source) {
       const topicList = document.getElementById('topic-list');
       const sel = document.getElementById('channel-select');
@@ -386,7 +411,23 @@
 
           const row = document.createElement('div');
           row.className = 'tree-node';
-          row.textContent = `${t.name} (${t.messageCount})`;
+
+          const label = document.createElement('span');
+          label.className = 'topic-label';
+          label.textContent = `${t.name} (${t.messageCount})`;
+
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'topic-del-btn';
+          del.textContent = 'Del';
+          del.onclick = async (e) => {
+            e.stopPropagation();
+            await deleteTopicFromUI(t.id, t.name || t.id);
+          };
+
+          row.appendChild(label);
+          row.appendChild(del);
+
           row.onclick = async () => {
             currentChannel = t.id;
             currentTopicName = t.name || '';
