@@ -158,6 +158,63 @@ app.get('/api/stream', (req, res) => {
   });
 });
 
+/** Create telegram forum topic */
+app.post('/api/telegram/topics/create', async (req, res) => {
+  try {
+    const { chatId, title } = req.body || {};
+    const resolvedChatId = chatId
+      || process.env.TG_CHAT_ID
+      || process.env.TELEGRAM_CHAT_ID
+      || db.getPrimaryTelegramChatId();
+
+    if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
+    if (!title || !String(title).trim()) return res.status(400).json({ error: 'title required' });
+    if (String(title).trim().length > 128) return res.status(400).json({ error: 'title too long (max 128)' });
+
+    const result = await sender.createTopic({
+      chatId: String(resolvedChatId),
+      title: String(title).trim(),
+    });
+
+    return res.json(result);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (msg.includes('required')) return res.status(400).json({ error: msg });
+    return res.status(500).json({ error: 'telegram topic create failed', detail: msg });
+  }
+});
+
+/** Delete telegram forum topic */
+app.post('/api/telegram/topics/delete', async (req, res) => {
+  try {
+    const { chatId, topicId } = req.body || {};
+    const resolvedChatId = chatId
+      || process.env.TG_CHAT_ID
+      || process.env.TELEGRAM_CHAT_ID
+      || db.getPrimaryTelegramChatId();
+
+    if (topicId === undefined || topicId === null || topicId === '') {
+      return res.status(400).json({ error: 'topicId required' });
+    }
+    const resolvedTopicId = Number(topicId);
+    if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
+    if (!Number.isFinite(resolvedTopicId)) return res.status(400).json({ error: 'topicId required' });
+
+    const result = await sender.deleteTopic({
+      chatId: String(resolvedChatId),
+      topicId: resolvedTopicId,
+    });
+
+    db.deleteTelegramTopic(String(resolvedChatId), String(resolvedTopicId));
+
+    return res.json(result);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (msg.includes('required')) return res.status(400).json({ error: msg });
+    return res.status(500).json({ error: 'telegram topic delete failed', detail: msg });
+  }
+});
+
 /** Send telegram message (text only) */
 app.post('/api/telegram/send', async (req, res) => {
   try {

@@ -14,8 +14,12 @@
     #sidebar { width: 280px; background: #1a1a2e; color: #eee; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
     #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
     #sidebar select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; font-size: 13px; }
+    .sidebar-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .sidebar-mini-btn { border: 1px solid #3a4f80; background: #22345a; color: #d7e6ff; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+    .sidebar-mini-btn:hover { background: #2a4373; }
 
     .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .topic-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
     .tree-node.active { background: rgba(100,140,255,0.3); }
     .tree-toggle { width: 16px; text-align: center; font-weight: 700; opacity: 0.9; cursor: pointer; user-select: none; }
@@ -81,16 +85,16 @@
     #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
     #composer-send:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    #msg-context-menu { position: fixed; display: none; z-index: 9999; min-width: 120px; background: #fff; border: 1px solid #d8deea; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.16); padding: 4px; }
-    #msg-context-menu button { width: 100%; border: none; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-    #msg-context-menu button:hover { background: #edf2ff; }
+    #msg-context-menu, #topic-context-menu { position: fixed; display: none; z-index: 9999; min-width: 120px; background: #fff; border: 1px solid #d8deea; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.16); padding: 4px; }
+    #msg-context-menu button, #topic-context-menu button { width: 100%; border: none; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    #msg-context-menu button:hover, #topic-context-menu button:hover { background: #edf2ff; }
 
     body.dark #composer { background: #161a22; border-top-color: #2a2f3a; }
     body.dark #reply-banner { color: #d7e6ff; background: #243753; border-color: #345179; }
     body.dark #composer-input { background: #0f1115; color: #e8eaed; border-color: #2f3644; }
-    body.dark #msg-context-menu { background: #1a1f29; border-color: #2f3644; }
-    body.dark #msg-context-menu button { color: #e8eaed; }
-    body.dark #msg-context-menu button:hover { background: #2a3344; }
+    body.dark #msg-context-menu, body.dark #topic-context-menu { background: #1a1f29; border-color: #2f3644; }
+    body.dark #msg-context-menu button, body.dark #topic-context-menu button { color: #e8eaed; }
+    body.dark #msg-context-menu button:hover, body.dark #topic-context-menu button:hover { background: #2a3344; }
   </style>
 </head>
 <body>
@@ -100,7 +104,10 @@
       <select id="source-select"><option value="">Select source...</option></select>
     </div>
     <div>
-      <h2>Topics</h2>
+      <div class="sidebar-row">
+        <h2>Topics</h2>
+        <button id="create-topic-btn" class="sidebar-mini-btn" type="button">+ Topic</button>
+      </div>
       <select id="channel-select" style="display:none;"></select>
       <div id="topic-list" style="margin-top:8px; display:none;"></div>
     </div>
@@ -125,6 +132,9 @@
   <div id="msg-context-menu">
     <button id="ctx-reply-btn" type="button">Reply</button>
   </div>
+  <div id="topic-context-menu">
+    <button id="ctx-delete-topic-btn" type="button">Delete Topic</button>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
@@ -141,6 +151,8 @@
     let realtimeRefreshPending = false;
     let replyTarget = null;
     let contextTarget = null;
+    let topicContextTarget = null;
+    const pendingTopics = new Map();
 
     const md = window.markdownit({
       html: false,
@@ -224,6 +236,20 @@
       const menu = document.getElementById('msg-context-menu');
       menu.style.display = 'none';
       contextTarget = null;
+    }
+
+    function openTopicContextMenu(x, y, topicInfo) {
+      topicContextTarget = topicInfo;
+      const menu = document.getElementById('topic-context-menu');
+      menu.style.display = 'block';
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+    }
+
+    function closeTopicContextMenu() {
+      const menu = document.getElementById('topic-context-menu');
+      menu.style.display = 'none';
+      topicContextTarget = null;
     }
 
     async function refreshCurrentView() {
@@ -324,6 +350,55 @@
       }
     }
 
+    async function createTopicFromUI() {
+      if (currentSource !== 'telegram') return;
+      const title = window.prompt('New topic title');
+      if (title === null) return;
+      const trimmed = String(title).trim();
+      if (!trimmed) return;
+
+      const result = await api('POST', '/telegram/topics/create', { title: trimmed });
+      if (result?.error) {
+        alert(`Create topic failed: ${result.error}`);
+        return;
+      }
+
+      if (result?.topicId) {
+        pendingTopics.set(String(result.topicId), { name: trimmed });
+      }
+
+      await loadChannels('telegram');
+      if (result?.topicId) {
+        currentChannel = String(result.topicId);
+        currentTopicName = trimmed;
+        updateComposerVisibility();
+        await loadView(currentSource, currentChannel);
+        startRealtimeStream();
+      }
+    }
+
+    async function deleteTopicFromUI(topicId, topicName) {
+      if (currentSource !== 'telegram') return;
+      const ok = window.confirm(`Delete topic "${topicName}"? This will delete topic history on Telegram.`);
+      if (!ok) return;
+
+      const result = await api('POST', '/telegram/topics/delete', { topicId: Number(topicId) });
+      if (result?.error) {
+        alert(`Delete topic failed: ${result.error}`);
+        return;
+      }
+
+      if (String(currentChannel) === String(topicId)) {
+        currentChannel = '';
+        currentTopicName = '';
+        document.getElementById('messages').innerHTML = '<div id="empty-state">Select a topic to view messages</div>';
+        updateComposerVisibility();
+        stopRealtimeStream();
+      }
+
+      await loadChannels('telegram');
+    }
+
     async function loadChannels(source) {
       const topicList = document.getElementById('topic-list');
       const sel = document.getElementById('channel-select');
@@ -332,7 +407,18 @@
       sel.innerHTML = '';
 
       if (source === 'telegram') {
-        const topics = await api('GET', '/telegram/topics');
+        const fetched = await api('GET', '/telegram/topics');
+        const topics = Array.isArray(fetched) ? [...fetched] : [];
+
+        // Merge locally-created topics that may not be ingested yet.
+        for (const [id, t] of pendingTopics.entries()) {
+          if (!topics.some(x => String(x.id) === String(id))) {
+            topics.unshift({ id: String(id), name: t.name, messageCount: 0, lastTimestamp: Date.now() });
+          } else {
+            pendingTopics.delete(String(id));
+          }
+        }
+
         topics.forEach(t => {
           const opt = document.createElement('option');
           opt.value = t.id;
@@ -341,7 +427,12 @@
 
           const row = document.createElement('div');
           row.className = 'tree-node';
-          row.textContent = `${t.name} (${t.messageCount})`;
+
+          const label = document.createElement('span');
+          label.className = 'topic-label';
+          label.textContent = `${t.name} (${t.messageCount})`;
+          row.appendChild(label);
+
           row.onclick = async () => {
             currentChannel = t.id;
             currentTopicName = t.name || '';
@@ -349,6 +440,11 @@
             updateComposerVisibility();
             await loadView(currentSource, currentChannel);
             startRealtimeStream();
+          };
+
+          row.oncontextmenu = (e) => {
+            e.preventDefault();
+            openTopicContextMenu(e.clientX, e.clientY, { id: t.id, name: t.name || t.id });
           };
           topicList.appendChild(row);
         });
@@ -685,8 +781,16 @@
       closeContextMenu();
     };
 
+    document.getElementById('ctx-delete-topic-btn').onclick = async () => {
+      if (topicContextTarget) {
+        await deleteTopicFromUI(topicContextTarget.id, topicContextTarget.name);
+      }
+      closeTopicContextMenu();
+    };
+
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#msg-context-menu')) closeContextMenu();
+      if (!e.target.closest('#topic-context-menu')) closeTopicContextMenu();
     });
 
     document.getElementById('source-select').onchange = async (e) => {
@@ -695,6 +799,7 @@
       currentTopicName = '';
       updateComposerVisibility();
       stopRealtimeStream();
+      closeTopicContextMenu();
       if (currentSource) await loadChannels(currentSource);
     };
 
@@ -709,6 +814,12 @@
       } else {
         stopRealtimeStream();
       }
+    };
+
+    document.getElementById('create-topic-btn').onclick = () => {
+      createTopicFromUI().catch(() => {
+        alert('Create topic failed. Please try again.');
+      });
     };
 
     document.getElementById('composer-send').onclick = sendCurrentMessage;

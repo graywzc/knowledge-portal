@@ -238,6 +238,13 @@ class Database {
     return row ? String(row.chat_id) : null;
   }
 
+  deleteTelegramTopic(chatId, topicId) {
+    return this.db.prepare(
+      `DELETE FROM messages
+       WHERE source='telegram' AND chat_id=? AND topic_id=?`
+    ).run(String(chatId), String(topicId));
+  }
+
   getChannelSignature(source, channel, limit = 80) {
     const scope = String(channel);
     const rows = this.db.prepare(

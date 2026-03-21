@@ -50,6 +50,7 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
     }
     if (u.endsWith('/api/sources/telegram/channels/55/view')) return { json: async () => view };
     if (u.endsWith('/api/telegram/send') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
+    if (u.endsWith('/api/telegram/topics/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
 
     throw new Error(`Unexpected fetch URL: ${u}`);
   });
@@ -436,5 +437,22 @@ describe('web component behavior (index.html)', () => {
 
     layerNodes = Array.from(document.querySelectorAll('#tree .tree-node')).map((n) => n.textContent);
     expect(layerNodes.some((t) => t.includes('d'))).toBe(true);
+  });
+
+  it('calls topic delete endpoint from topic right-click menu', async () => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    await boot({ view: makeView() });
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    expect(topicRow).toBeTruthy();
+    topicRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+    await flush();
+
+    document.getElementById('ctx-delete-topic-btn').click();
+    await flush();
+
+    const deleteCalls = window.fetch.mock.calls.filter(([url, opts]) =>
+      String(url).includes('/api/telegram/topics/delete') && opts?.method === 'POST');
+    expect(deleteCalls.length).toBe(1);
   });
 });
