@@ -94,6 +94,7 @@ It reads credentials/session from:
 - `POST /api/state` — import state
 - `POST /api/reset` — reset to empty
 - `POST /api/telegram/send` — send Telegram text `{ chatId?, text, replyToId? }` (`chatId` falls back to `TG_CHAT_ID`/primary Telegram chat)
+- `POST /api/telegram/topics/create` — create Telegram forum topic `{ chatId?, title }`
 
 ## Test
 

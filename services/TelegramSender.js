@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { TelegramClient } = require('telegram');
+const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 
 class TelegramSender {
@@ -35,6 +35,50 @@ class TelegramSender {
 
     await this.client.connect();
     this.connected = true;
+  }
+
+  async createTopic({ chatId, title } = {}) {
+    if (!chatId) throw new Error('chatId required');
+    if (!title || !String(title).trim()) throw new Error('title required');
+
+    await this.#ensureClient();
+
+    const entity = await this.client.getEntity(String(chatId));
+    const result = await this.client.invoke(new Api.channels.CreateForumTopic({
+      channel: entity,
+      title: String(title).trim(),
+    }));
+
+    let topicId = null;
+    const normalizedTitle = String(title).trim();
+    const updates = Array.isArray(result?.updates) ? result.updates : [];
+    const candidates = [];
+
+    for (const u of updates) {
+      const m = u?.message || u?.messagePeer || null;
+      const action = m?.action || null;
+      if (action?.className !== 'MessageActionTopicCreate') continue;
+      const id = Number(m?.id);
+      if (!Number.isFinite(id)) continue;
+      candidates.push({
+        id,
+        title: action?.title ? String(action.title).trim() : null,
+      });
+    }
+
+    const exact = candidates.find((c) => c.title === normalizedTitle);
+    if (exact) {
+      topicId = exact.id;
+    } else if (candidates.length) {
+      topicId = candidates[candidates.length - 1].id;
+    }
+
+    return {
+      ok: true,
+      chatId: String(chatId),
+      title: String(title).trim(),
+      topicId,
+    };
   }
 
   async sendText({ chatId, text, replyToId } = {}) {

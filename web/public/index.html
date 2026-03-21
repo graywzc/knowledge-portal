@@ -14,6 +14,9 @@
     #sidebar { width: 280px; background: #1a1a2e; color: #eee; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
     #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
     #sidebar select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; font-size: 13px; }
+    .sidebar-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .sidebar-mini-btn { border: 1px solid #3a4f80; background: #22345a; color: #d7e6ff; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+    .sidebar-mini-btn:hover { background: #2a4373; }
 
     .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
@@ -100,7 +103,10 @@
       <select id="source-select"><option value="">Select source...</option></select>
     </div>
     <div>
-      <h2>Topics</h2>
+      <div class="sidebar-row">
+        <h2>Topics</h2>
+        <button id="create-topic-btn" class="sidebar-mini-btn" type="button">+ Topic</button>
+      </div>
       <select id="channel-select" style="display:none;"></select>
       <div id="topic-list" style="margin-top:8px; display:none;"></div>
     </div>
@@ -141,6 +147,7 @@
     let realtimeRefreshPending = false;
     let replyTarget = null;
     let contextTarget = null;
+    const pendingTopics = new Map();
 
     const md = window.markdownit({
       html: false,
@@ -324,6 +331,33 @@
       }
     }
 
+    async function createTopicFromUI() {
+      if (currentSource !== 'telegram') return;
+      const title = window.prompt('New topic title');
+      if (title === null) return;
+      const trimmed = String(title).trim();
+      if (!trimmed) return;
+
+      const result = await api('POST', '/telegram/topics/create', { title: trimmed });
+      if (result?.error) {
+        alert(`Create topic failed: ${result.error}`);
+        return;
+      }
+
+      if (result?.topicId) {
+        pendingTopics.set(String(result.topicId), { name: trimmed });
+      }
+
+      await loadChannels('telegram');
+      if (result?.topicId) {
+        currentChannel = String(result.topicId);
+        currentTopicName = trimmed;
+        updateComposerVisibility();
+        await loadView(currentSource, currentChannel);
+        startRealtimeStream();
+      }
+    }
+
     async function loadChannels(source) {
       const topicList = document.getElementById('topic-list');
       const sel = document.getElementById('channel-select');
@@ -332,7 +366,18 @@
       sel.innerHTML = '';
 
       if (source === 'telegram') {
-        const topics = await api('GET', '/telegram/topics');
+        const fetched = await api('GET', '/telegram/topics');
+        const topics = Array.isArray(fetched) ? [...fetched] : [];
+
+        // Merge locally-created topics that may not be ingested yet.
+        for (const [id, t] of pendingTopics.entries()) {
+          if (!topics.some(x => String(x.id) === String(id))) {
+            topics.unshift({ id: String(id), name: t.name, messageCount: 0, lastTimestamp: Date.now() });
+          } else {
+            pendingTopics.delete(String(id));
+          }
+        }
+
         topics.forEach(t => {
           const opt = document.createElement('option');
           opt.value = t.id;
@@ -709,6 +754,12 @@
       } else {
         stopRealtimeStream();
       }
+    };
+
+    document.getElementById('create-topic-btn').onclick = () => {
+      createTopicFromUI().catch(() => {
+        alert('Create topic failed. Please try again.');
+      });
     };
 
     document.getElementById('composer-send').onclick = sendCurrentMessage;

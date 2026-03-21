@@ -4,6 +4,7 @@ const mockConnect = jest.fn();
 const mockDisconnect = jest.fn();
 const mockGetEntity = jest.fn();
 const mockSendMessage = jest.fn();
+const mockInvoke = jest.fn();
 
 jest.mock('telegram', () => ({
   TelegramClient: jest.fn().mockImplementation(() => ({
@@ -11,7 +12,15 @@ jest.mock('telegram', () => ({
     disconnect: mockDisconnect,
     getEntity: mockGetEntity,
     sendMessage: mockSendMessage,
+    invoke: mockInvoke,
   })),
+  Api: {
+    channels: {
+      CreateForumTopic: class {
+        constructor(args) { this.args = args; }
+      },
+    },
+  },
 }));
 
 jest.mock('telegram/sessions', () => ({
@@ -29,6 +38,37 @@ describe('TelegramSender', () => {
     mockDisconnect.mockResolvedValue(undefined);
     mockGetEntity.mockResolvedValue({ id: 'entity' });
     mockSendMessage.mockResolvedValue({ id: 4321 });
+    mockInvoke.mockResolvedValue({ updates: [] });
+  });
+
+  it('creates forum topic via MTProto', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      updates: [
+        {
+          message: {
+            id: 41,
+            action: { className: 'MessageActionTopicCreate', title: 'Old Topic' },
+          },
+        },
+        {
+          message: {
+            id: 55,
+            action: { className: 'MessageActionTopicCreate', title: 'New Topic' },
+          },
+        },
+      ],
+    });
+
+    const sender = new TelegramSender({ apiId: '1', apiHash: 'h', sessionPath: '/tmp/session' });
+    const out = await sender.createTopic({ chatId: '-100', title: 'New Topic' });
+
+    expect(mockInvoke).toHaveBeenCalled();
+    expect(out).toEqual({
+      ok: true,
+      chatId: '-100',
+      title: 'New Topic',
+      topicId: 55,
+    });
   });
 
   it('sends plain message without forcing reply target', async () => {
