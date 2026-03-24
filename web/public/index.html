@@ -10,15 +10,16 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; background: #f5f5f5; color: #111; }
 
     body.dark { background: #0f1115; color: #e8eaed; }
+    body.resizing { cursor: col-resize; user-select: none; }
 
-    #sidebar { width: 280px; background: #1a1a2e; color: #eee; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    #sidebar { width: 280px; min-width: 180px; max-width: none; background: #1a1a2e; color: #eee; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
     #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
     #sidebar select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; font-size: 13px; }
     .sidebar-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     .sidebar-mini-btn { border: 1px solid #3a4f80; background: #22345a; color: #d7e6ff; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
     .sidebar-mini-btn:hover { background: #2a4373; }
 
-    .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; display: flex; align-items: flex-start; gap: 6px; }
     .topic-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
     .tree-node.active { background: rgba(100,140,255,0.3); }
@@ -27,11 +28,15 @@
     .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tree-children { margin-left: 16px; border-left: 1px solid #333; }
 
-    #main { flex: 1; display: flex; flex-direction: column; }
+    #pane-splitter { width: 6px; cursor: col-resize; background: transparent; position: relative; }
+    #pane-splitter::after { content: ''; position: absolute; left: 2px; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.08); }
+    #pane-splitter:hover::after, body.resizing #pane-splitter::after { background: rgba(143,176,255,0.7); }
+
+    #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
     #layer-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; font-weight: 600; }
     #layer-header .back-link { display: inline-block; margin-left: 10px; font-weight: 500; font-size: 12px; color: #4a6cf7; cursor: pointer; text-decoration: none; }
     #layer-header .back-link:hover { text-decoration: underline; }
-    #messages { flex: 1; overflow-y: auto; padding: 20px; }
+    #messages { flex: 1; overflow-y: auto; padding: 20px; min-width: 0; }
     .msg { max-width: 760px; margin-bottom: 12px; padding: 10px 14px 22px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; position: relative; }
     .msg p { margin: 0 0 8px 0; }
     .msg p:last-child { margin-bottom: 0; }
@@ -80,8 +85,8 @@
     #composer.hidden { display: none; }
     #reply-banner { display: none; font-size: 12px; color: #2d4f73; background: #e9f2ff; border: 1px solid #c8dcff; border-radius: 8px; padding: 6px 10px; }
     #reply-banner .close { float: right; cursor: pointer; font-weight: 700; }
-    #composer-row { display: flex; gap: 8px; align-items: center; }
-    #composer-input { flex: 1; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; min-height: 44px; max-height: 220px; resize: none; overflow-y: hidden; }
+    #composer-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+    #composer-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; min-height: 44px; max-height: 220px; resize: none; overflow-y: hidden; }
     #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
     #composer-send:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -116,6 +121,7 @@
       <div id="tree"></div>
     </div>
   </div>
+  <div id="pane-splitter" aria-label="Resize panes" role="separator"></div>
   <div id="main">
     <div id="layer-header">Knowledge Portal</div>
     <div id="messages">
@@ -142,6 +148,7 @@
   <script>
     let currentSource = '';
     let currentChannel = '';
+    let isResizingSidebar = false;
     let currentTopicName = '';
     let currentLayerId = 'A';
     let viewState = null;
@@ -202,6 +209,21 @@
       if (body) opts.body = JSON.stringify(body);
       const res = await fetch(`${appBasePath}/api${path}`, opts);
       return res.json();
+    }
+
+    function applySidebarWidth(px) {
+      const min = 180;
+      const max = window.innerWidth - 10;
+      const width = Math.max(min, Math.min(Number(px) || 280, max));
+      document.getElementById('sidebar').style.width = `${width}px`;
+      try { localStorage.setItem('kp:sidebarWidth', String(width)); } catch (_) {}
+    }
+
+    function restoreSidebarWidth() {
+      try {
+        const saved = Number(localStorage.getItem('kp:sidebarWidth') || '');
+        if (Number.isFinite(saved) && saved > 0) applySidebarWidth(saved);
+      } catch (_) {}
     }
 
     function updateComposerVisibility() {
@@ -522,8 +544,11 @@
       if (layerId === 'A' && currentTopicName) return currentTopicName;
       const layer = viewState?.state?.layers?.[layerId];
       if (!layer || !layer.messages || layer.messages.length === 0) return `Layer ${layerId}`;
-      const first = (layer.messages[0].content || '').replace(/\s+/g, ' ').trim();
-      return first ? (first.length > 42 ? first.slice(0, 42) + '…' : first) : `Layer ${layerId}`;
+
+      const raw = String(layer.messages[0].content || '');
+      const firstRow = raw.split(/\r?\n/).find(line => line.trim().length > 0) || '';
+      const normalized = firstRow.replace(/\s+/g, ' ').trim();
+      return normalized || `Layer ${layerId}`;
     }
 
     function renderTree(node, container) {
@@ -841,6 +866,26 @@
       }
     });
 
+    const splitter = document.getElementById('pane-splitter');
+    splitter.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isResizingSidebar = true;
+      document.body.classList.add('resizing');
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isResizingSidebar) return;
+      applySidebarWidth(e.clientX);
+    });
+    window.addEventListener('mouseup', () => {
+      if (!isResizingSidebar) return;
+      isResizingSidebar = false;
+      document.body.classList.remove('resizing');
+    });
+    window.addEventListener('resize', () => {
+      const current = parseInt(document.getElementById('sidebar').style.width || '280', 10);
+      applySidebarWidth(current);
+    });
+
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) return;
       refreshCurrentView();
@@ -850,6 +895,7 @@
       stopRealtimeStream();
     });
 
+    restoreSidebarWidth();
     applyThemeByTime();
     setInterval(applyThemeByTime, 60 * 1000);
     updateComposerVisibility();
