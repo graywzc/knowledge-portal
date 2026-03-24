@@ -28,9 +28,9 @@
     .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tree-children { margin-left: 16px; border-left: 1px solid #333; }
 
-    #pane-splitter { width: 6px; cursor: col-resize; background: transparent; position: relative; }
-    #pane-splitter::after { content: ''; position: absolute; left: 2px; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.08); }
-    #pane-splitter:hover::after, body.resizing #pane-splitter::after { background: rgba(143,176,255,0.7); }
+    #pane-splitter { flex: 0 0 12px; width: 12px; cursor: col-resize; background: transparent; position: relative; align-self: stretch; }
+    #pane-splitter::after { content: ''; position: absolute; left: 5px; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.12); }
+    #pane-splitter:hover::after, body.resizing #pane-splitter::after { background: rgba(143,176,255,0.85); }
 
     #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
     #layer-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; font-weight: 600; }
