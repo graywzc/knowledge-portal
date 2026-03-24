@@ -94,6 +94,9 @@
     #composer.hidden { display: none; }
     #reply-banner { display: none; font-size: 12px; color: #2d4f73; background: #e9f2ff; border: 1px solid #c8dcff; border-radius: 8px; padding: 6px 10px; }
     #reply-banner .close { float: right; cursor: pointer; font-weight: 700; }
+    #image-preview { display: none; align-items: center; gap: 8px; }
+    #image-preview img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #cfd6e6; }
+    #image-preview button { border: 1px solid #a33; background: #fff; color: #a33; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
     #composer-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
     #composer-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; min-height: 44px; max-height: 220px; resize: none; overflow-y: hidden; }
     #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
@@ -138,6 +141,10 @@
     </div>
     <div id="composer" class="hidden">
       <div id="reply-banner"></div>
+      <div id="image-preview">
+        <img id="image-preview-img" alt="Pasted image preview" />
+        <button id="image-preview-remove" type="button">Remove image</button>
+      </div>
       <div id="composer-row">
         <textarea id="composer-input" placeholder="Send a message to Telegram…"></textarea>
         <button id="composer-send" type="button">Send</button>
@@ -160,6 +167,7 @@
     let isResizingSidebar = false;
     let currentTopicName = '';
     let currentLayerId = 'A';
+    let pendingImageDataUrl = null;
     let viewState = null;
     let expandedNodes = new Set(['A']);
     let isSending = false;
@@ -301,6 +309,23 @@
       updateTopicWipUI();
     }
 
+    function updateImagePreview() {
+      const box = document.getElementById('image-preview');
+      const img = document.getElementById('image-preview-img');
+      if (!pendingImageDataUrl) {
+        box.style.display = 'none';
+        img.removeAttribute('src');
+        return;
+      }
+      img.src = pendingImageDataUrl;
+      box.style.display = 'flex';
+    }
+
+    function clearPendingImage() {
+      pendingImageDataUrl = null;
+      updateImagePreview();
+    }
+
     function autoGrowComposerInput() {
       const input = document.getElementById('composer-input');
       if (!input) return;
@@ -411,20 +436,32 @@
       const input = document.getElementById('composer-input');
       const btn = document.getElementById('composer-send');
       const text = String(input.value || '').trim();
-      if (!text) return;
+      const replyToId = replyTarget ? Number(getShortChatId(replyTarget.id)) : getSelectedLayerAnchorReplyId();
+      if (!text && !pendingImageDataUrl) return;
 
       isSending = true;
       btn.disabled = true;
 
       try {
-        const result = await api('POST', '/telegram/send', {
-          text,
-          replyToId: replyTarget ? Number(getShortChatId(replyTarget.id)) : getSelectedLayerAnchorReplyId(),
-        });
+        let result;
+        if (pendingImageDataUrl) {
+          result = await api('POST', '/telegram/send-image', {
+            dataUrl: pendingImageDataUrl,
+            caption: text,
+            replyToId,
+          });
+        } else {
+          result = await api('POST', '/telegram/send', {
+            text,
+            replyToId,
+          });
+        }
+
         if (result && result.error) throw new Error(result.error);
         markLayerWip(currentChannel, currentLayerId);
         input.value = '';
         autoGrowComposerInput();
+        clearPendingImage();
         setReplyTarget(null);
         await loadView(currentSource, currentChannel);
       } catch (e) {
@@ -938,7 +975,26 @@
     };
 
     document.getElementById('composer-send').onclick = sendCurrentMessage;
+    document.getElementById('image-preview-remove').onclick = clearPendingImage;
+
     document.getElementById('composer-input').addEventListener('input', autoGrowComposerInput);
+    document.getElementById('composer-input').addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items || [];
+      for (const item of items) {
+        if (!String(item.type || '').startsWith('image/')) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          pendingImageDataUrl = String(reader.result || '');
+          updateImagePreview();
+        };
+        reader.readAsDataURL(file);
+        e.preventDefault();
+        return;
+      }
+    });
+
     document.getElementById('composer-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();

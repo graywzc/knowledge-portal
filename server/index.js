@@ -17,7 +17,7 @@ function createApp({ dbPath, telegramSender } = {}) {
   const db = new Database(DB_PATH);
   const sender = telegramSender || new TelegramSender();
 
-  app.use(express.json());
+  app.use(express.json({ limit: '15mb' }));
   app.use(express.static(path.join(__dirname, '../web/public')));
 
   const MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(process.cwd(), 'media');
@@ -212,6 +212,42 @@ app.post('/api/telegram/topics/delete', async (req, res) => {
     const msg = String(err?.message || err);
     if (msg.includes('required')) return res.status(400).json({ error: msg });
     return res.status(500).json({ error: 'telegram topic delete failed', detail: msg });
+  }
+});
+
+/** Send telegram image (clipboard data url) */
+app.post('/api/telegram/send-image', async (req, res) => {
+  try {
+    const { chatId, dataUrl, caption, replyToId } = req.body || {};
+
+    const resolvedChatId = chatId
+      || process.env.TG_CHAT_ID
+      || process.env.TELEGRAM_CHAT_ID
+      || db.getPrimaryTelegramChatId();
+
+    if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
+    if (!dataUrl || !String(dataUrl).startsWith('data:image/')) return res.status(400).json({ error: 'dataUrl image required' });
+
+    const m = String(dataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!m) return res.status(400).json({ error: 'invalid dataUrl format' });
+    const mimeType = m[1];
+    const b64 = m[2];
+    const imageBuffer = Buffer.from(b64, 'base64');
+    if (!imageBuffer.length) return res.status(400).json({ error: 'invalid image data' });
+
+    const result = await sender.sendImage({
+      chatId: String(resolvedChatId),
+      imageBuffer,
+      mimeType,
+      caption: String(caption || ''),
+      replyToId,
+    });
+
+    return res.json(result);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (msg.includes('required') || msg.includes('invalid')) return res.status(400).json({ error: msg });
+    return res.status(500).json({ error: 'telegram image send failed', detail: msg });
   }
 });
 

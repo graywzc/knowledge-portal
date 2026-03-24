@@ -99,6 +99,46 @@ class TelegramSender {
     };
   }
 
+  async sendImage({ chatId, imageBuffer, mimeType = 'image/png', caption = '', replyToId } = {}) {
+    if (!chatId) throw new Error('chatId required');
+    if (!imageBuffer || !Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+      throw new Error('imageBuffer required');
+    }
+
+    await this.#ensureClient();
+
+    const entity = await this.client.getEntity(String(chatId));
+    const resolvedReplyTo = (replyToId === undefined || replyToId === null || replyToId === '')
+      ? null
+      : Number(replyToId);
+    if (resolvedReplyTo !== null && !Number.isFinite(resolvedReplyTo)) {
+      throw new Error('replyToId must be a numeric Telegram message id');
+    }
+
+    const ext = mimeType.includes('jpeg') ? 'jpg' : (mimeType.split('/')[1] || 'png');
+    const tmpPath = path.join(process.cwd(), `data/tmp-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`);
+    fs.mkdirSync(path.dirname(tmpPath), { recursive: true });
+    fs.writeFileSync(tmpPath, imageBuffer);
+
+    try {
+      const payload = {
+        file: tmpPath,
+        caption: String(caption || ''),
+      };
+      if (resolvedReplyTo) payload.replyTo = resolvedReplyTo;
+
+      const sent = await this.client.sendFile(entity, payload);
+      return {
+        ok: true,
+        telegramMessageId: Number(sent?.id),
+        chatId: String(chatId),
+        replyToId: resolvedReplyTo,
+      };
+    } finally {
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+    }
+  }
+
   async sendText({ chatId, text, replyToId } = {}) {
     if (!chatId) throw new Error('chatId required');
     if (!text || !String(text).trim()) throw new Error('text required');
