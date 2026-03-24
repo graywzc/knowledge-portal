@@ -21,6 +21,15 @@
 
     .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 14px; display: flex; align-items: flex-start; gap: 6px; }
     .topic-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wip-dots { display: inline-flex; align-items: center; gap: 2px; min-width: 14px; }
+    .wip-dots.hidden { visibility: hidden; }
+    .wip-dots i { width: 5px; height: 5px; border-radius: 999px; background: #6fb2ff; opacity: 0.35; animation: wipPulse 1s infinite; }
+    .wip-dots i:nth-child(2) { animation-delay: 0.18s; }
+    .wip-dots i:nth-child(3) { animation-delay: 0.36s; }
+    @keyframes wipPulse {
+      0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-1px); }
+    }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
     .tree-node.active { background: rgba(100,140,255,0.3); }
     .tree-toggle { width: 16px; text-align: center; font-weight: 700; opacity: 0.9; cursor: pointer; user-select: none; }
@@ -160,6 +169,7 @@
     let contextTarget = null;
     let topicContextTarget = null;
     const pendingTopics = new Map();
+    const layerWipState = new Map(); // key: `${topicId}:${layerId}` -> { topicId, layerId, startAt, untilAt }
 
     const md = window.markdownit({
       html: false,
@@ -230,6 +240,65 @@
       const composer = document.getElementById('composer');
       const enabled = (currentSource === 'telegram' && !!currentChannel);
       composer.classList.toggle('hidden', !enabled);
+    }
+
+    function markLayerWip(topicId, layerId, ttlMs = 30000) {
+      if (!topicId || !layerId) return;
+      const now = Date.now();
+      const key = `${topicId}:${layerId}`;
+      layerWipState.set(key, { topicId: String(topicId), layerId: String(layerId), startAt: now, untilAt: now + ttlMs });
+      updateTopicWipUI();
+    }
+
+    function clearLayerWip(topicId, layerId) {
+      if (!topicId || !layerId) return;
+      layerWipState.delete(`${topicId}:${layerId}`);
+      updateTopicWipUI();
+    }
+
+    function cleanupLayerWip() {
+      const now = Date.now();
+      let changed = false;
+      for (const [k, v] of layerWipState.entries()) {
+        if (!v || now > Number(v.untilAt || 0)) {
+          layerWipState.delete(k);
+          changed = true;
+        }
+      }
+      if (changed) updateTopicWipUI();
+    }
+
+    function hasActiveWipForLayer(topicId, layerId) {
+      const now = Date.now();
+      const key = `${topicId}:${layerId}`;
+      const v = layerWipState.get(key);
+      return !!(v && now <= Number(v.untilAt || 0));
+    }
+
+    function updateTopicWipUI() {
+      const rows = document.querySelectorAll('#tree .tree-node[data-layer-id]');
+      rows.forEach((row) => {
+        const layerId = String(row.getAttribute('data-layer-id') || '');
+        const dots = row.querySelector('.wip-dots');
+        if (!dots || !layerId || !currentChannel) return;
+        const active = hasActiveWipForLayer(currentChannel, layerId);
+        dots.classList.toggle('hidden', !active);
+      });
+    }
+
+    function reconcileLayerWipFromView(topicId) {
+      if (!topicId || !viewState?.state?.layers) return;
+      for (const [k, w] of [...layerWipState.entries()]) {
+        if (String(w.topicId) !== String(topicId)) continue;
+        const layer = viewState.state.layers[w.layerId];
+        if (!layer) continue;
+
+        const hasBotReplyAfterStart = (layer.messages || []).some((m) =>
+          m?.sender === 'bot' && Number(m.timestamp || 0) >= Number(w.startAt || 0)
+        );
+        if (hasBotReplyAfterStart) layerWipState.delete(k);
+      }
+      updateTopicWipUI();
     }
 
     function autoGrowComposerInput() {
@@ -353,6 +422,7 @@
           replyToId: replyTarget ? Number(getShortChatId(replyTarget.id)) : getSelectedLayerAnchorReplyId(),
         });
         if (result && result.error) throw new Error(result.error);
+        markLayerWip(currentChannel, currentLayerId);
         input.value = '';
         autoGrowComposerInput();
         setReplyTarget(null);
@@ -459,6 +529,7 @@
 
           const row = document.createElement('div');
           row.className = 'tree-node';
+          row.setAttribute('data-topic-id', String(t.id));
 
           const label = document.createElement('span');
           label.className = 'topic-label';
@@ -480,6 +551,7 @@
           };
           topicList.appendChild(row);
         });
+        updateTopicWipUI();
         return;
       }
 
@@ -538,6 +610,8 @@
       renderTree(viewState.tree);
       showLayer(currentLayerId);
       updateComposerVisibility();
+      reconcileLayerWipFromView(channel);
+      cleanupLayerWip();
     }
 
     function layerTitle(layerId) {
@@ -564,6 +638,7 @@
       const div = document.createElement('div');
       div.className = 'tree-node' + (node.id === currentLayerId ? ' active' : '');
       div.title = `${layerTitle(node.id)} (${node.messageCount} msgs)`;
+      div.setAttribute('data-layer-id', String(node.id));
 
       const toggle = document.createElement('span');
       toggle.className = hasChildren ? 'tree-toggle' : 'tree-toggle placeholder';
@@ -577,11 +652,16 @@
         };
       }
 
+      const dots = document.createElement('span');
+      dots.className = 'wip-dots hidden';
+      dots.innerHTML = '<i></i><i></i><i></i>';
+
       const label = document.createElement('span');
       label.className = 'tree-label';
       label.textContent = layerTitle(node.id);
 
       div.appendChild(toggle);
+      div.appendChild(dots);
       div.appendChild(label);
       div.onclick = (e) => { e.stopPropagation(); showLayer(node.id); };
       container.appendChild(div);
@@ -898,6 +978,7 @@
     restoreSidebarWidth();
     applyThemeByTime();
     setInterval(applyThemeByTime, 60 * 1000);
+    setInterval(cleanupLayerWip, 1000);
     updateComposerVisibility();
     autoGrowComposerInput();
     loadSources();
