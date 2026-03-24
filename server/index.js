@@ -27,7 +27,15 @@ function createApp({ dbPath, telegramSender } = {}) {
 
 function buildTree(source, channel) {
   const messages = db.getMessages(source, channel);
-  const nav = new TreeNavigator();
+  const rootMessageId = (() => {
+    if (String(source) === 'telegram') {
+      const first = messages[0] || null;
+      const chatId = first?.chat_id ? String(first.chat_id) : String(process.env.TELEGRAM_CHAT_ID || process.env.TG_CHAT_ID || 'unknown-chat');
+      return `tg:${chatId}:${channel}`;
+    }
+    return `${source}:${channel}:root`;
+  })();
+  const nav = new TreeNavigator({ source, channel, rootMessageId });
 
   // Perspective user id: whose "self" rules should be used for branch/jump logic.
   // Can be overridden by env (recommended), else defaults to the most frequent sender in channel.
@@ -102,9 +110,9 @@ app.get('/api/sources/:source/channels/:channel/tree', (req, res) => {
 });
 
 /** Get a layer for a source+channel */
-app.get('/api/sources/:source/channels/:channel/layers/:layerId', (req, res) => {
+app.get('/api/sources/:source/channels/:channel/layers/:layerUuid', (req, res) => {
   const nav = buildTree(req.params.source, req.params.channel);
-  const layer = nav.getLayer(req.params.layerId);
+  const layer = nav.getLayer(req.params.layerUuid);
   if (!layer) return res.status(404).json({ error: 'Layer not found' });
   res.json(layer);
 });
@@ -114,7 +122,7 @@ app.get('/api/sources/:source/channels/:channel/view', (req, res) => {
   const nav = buildTree(req.params.source, req.params.channel);
   res.json({
     tree: nav.getTree(),
-    currentLayerId: nav.getCurrentLayerId(),
+    currentLayerUuid: nav.getCurrentLayerUuid(),
     state: nav.exportState(),
   });
 });
