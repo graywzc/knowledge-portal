@@ -4,123 +4,123 @@ const { TreeNavigator } = require('./TreeNavigator');
 describe('TreeNavigator', () => {
   it('appends messages to root layer when no reply', () => {
     const nav = new TreeNavigator();
+    const rootId = nav.getTree().id;
     nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'hello', timestamp: 1 });
     nav.addMessage({ id: '2', sender: 'other', replyToId: null, content: 'hi', timestamp: 2 });
     nav.addMessage({ id: '3', sender: 'self', replyToId: null, content: 'ok', timestamp: 3 });
 
-    const layer = nav.getLayer('A');
+    const layer = nav.getLayer(rootId);
     assert.strictEqual(layer.messages.length, 3);
-    assert.strictEqual(nav.getCurrentLayerId(), 'A');
+    assert.strictEqual(nav.getCurrentLayerUuid(), rootId);
   });
 
   it('branches when replying to other\'s message', () => {
     const nav = new TreeNavigator();
-    // self sends in layer A
+    const rootId = nav.getTree().id;
     nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'a1', timestamp: 1 });
-    // other replies in layer A
     nav.addMessage({ id: '2', sender: 'other', replyToId: null, content: 'a2', timestamp: 2 });
-    // self replies to other's message → branch to B
     const result = nav.addMessage({ id: '3', sender: 'self', replyToId: '2', content: 'b1', timestamp: 3 });
 
     assert.strictEqual(result.action, 'branch');
-    assert.strictEqual(result.layerId, 'B');
-    assert.strictEqual(nav.getCurrentLayerId(), 'B');
-    assert.strictEqual(nav.getLayer('B').messages.length, 1);
-    assert.strictEqual(nav.getLayer('B').parentLayerId, 'A');
+    const branchId = result.layerUuid;
+    assert.strictEqual(nav.getCurrentLayerUuid(), branchId);
+    assert.strictEqual(nav.getLayer(branchId).messages.length, 1);
+    assert.strictEqual(nav.getLayer(branchId).parentLayerUuid, rootId);
   });
 
   it('stays in current layer when replying to root anchor from a sub-layer', () => {
     const nav = new TreeNavigator();
     nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'a1', timestamp: 1 });
     nav.addMessage({ id: '2', sender: 'other', replyToId: null, content: 'a2', timestamp: 2 });
-    // Branch to B
-    nav.addMessage({ id: '3', sender: 'self', replyToId: '2', content: 'b1', timestamp: 3 });
-    assert.strictEqual(nav.getCurrentLayerId(), 'B');
+    const firstBranch = nav.addMessage({ id: '3', sender: 'self', replyToId: '2', content: 'b1', timestamp: 3 });
+    const branchId = firstBranch.layerUuid;
+    assert.strictEqual(nav.getCurrentLayerUuid(), branchId);
 
-    // Forum-root anchor behavior: append in B instead of jumping to A
     const result = nav.addMessage({ id: '4', sender: 'self', replyToId: '1', content: 'a3', timestamp: 4 });
     assert.strictEqual(result.action, 'append');
-    assert.strictEqual(result.layerId, 'B');
-    assert.strictEqual(nav.getCurrentLayerId(), 'B');
-    assert.strictEqual(nav.getLayer('B').messages.length, 2);
+    assert.strictEqual(result.layerUuid, branchId);
+    assert.strictEqual(nav.getCurrentLayerUuid(), branchId);
+    assert.strictEqual(nav.getLayer(branchId).messages.length, 2);
   });
 
   it('supports multiple sub-layers from same parent', () => {
     const nav = new TreeNavigator();
+    const rootId = nav.getTree().id;
     nav.addMessage({ id: '1', sender: 'other', replyToId: null, content: 'a1', timestamp: 1 });
     nav.addMessage({ id: '2', sender: 'other', replyToId: null, content: 'a2', timestamp: 2 });
 
-    // self sends in A
     nav.addMessage({ id: '3', sender: 'self', replyToId: null, content: 'a3', timestamp: 3 });
 
-    // Branch from a1 (other's msg) → B
-    nav.addMessage({ id: '4', sender: 'self', replyToId: '1', content: 'b1', timestamp: 4 });
-    assert.strictEqual(nav.getCurrentLayerId(), 'B');
+    const b = nav.addMessage({ id: '4', sender: 'self', replyToId: '1', content: 'b1', timestamp: 4 });
+    const bId = b.layerUuid;
+    assert.strictEqual(nav.getCurrentLayerUuid(), bId);
 
-    // Jump back to A by replying to own msg a3
     nav.addMessage({ id: '5', sender: 'self', replyToId: '3', content: 'a4', timestamp: 5 });
-    assert.strictEqual(nav.getCurrentLayerId(), 'A');
+    assert.strictEqual(nav.getCurrentLayerUuid(), rootId);
 
-    // Branch from a2 (other's msg) → C
-    const r2 = nav.addMessage({ id: '6', sender: 'self', replyToId: '2', content: 'c1', timestamp: 6 });
-    assert.strictEqual(r2.action, 'branch');
-    assert.strictEqual(nav.getCurrentLayerId(), 'C');
+    const c = nav.addMessage({ id: '6', sender: 'self', replyToId: '2', content: 'c1', timestamp: 6 });
+    assert.strictEqual(c.action, 'branch');
+    assert.strictEqual(nav.getCurrentLayerUuid(), c.layerUuid);
 
-    const layerA = nav.getLayer('A');
+    const layerA = nav.getLayer(rootId);
     assert.strictEqual(layerA.children.length, 2);
   });
 
   it('exports and imports state', () => {
     const nav = new TreeNavigator();
+    const rootId = nav.getTree().id;
     nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'a1', timestamp: 1 });
     nav.addMessage({ id: '2', sender: 'other', replyToId: null, content: 'a2', timestamp: 2 });
-    nav.addMessage({ id: '3', sender: 'self', replyToId: '2', content: 'b1', timestamp: 3 });
+    const branch = nav.addMessage({ id: '3', sender: 'self', replyToId: '2', content: 'b1', timestamp: 3 });
 
     const state = nav.exportState();
     const nav2 = TreeNavigator.fromState(state);
 
-    assert.strictEqual(nav2.getCurrentLayerId(), 'B');
-    assert.strictEqual(nav2.getLayer('A').messages.length, 2);
-    assert.strictEqual(nav2.getLayer('B').messages.length, 1);
+    assert.strictEqual(nav2.getCurrentLayerUuid(), branch.layerUuid);
+    assert.strictEqual(nav2.getLayer(rootId).messages.length, 2);
+    assert.strictEqual(nav2.getLayer(branch.layerUuid).messages.length, 1);
   });
 
   it('bot replies stay in the same layer as the replied ask', () => {
     const nav = new TreeNavigator();
+    const rootId = nav.getTree().id;
     nav.addMessage({ id: '1', sender: 'self', replyToId: null, content: 'a1', timestamp: 1 });
     nav.addMessage({ id: '2', sender: 'bot', replyToId: '1', content: 'a2', timestamp: 2 });
 
-    assert.strictEqual(nav.getCurrentLayerId(), 'A');
-    assert.strictEqual(nav.getLayer('A').messages.length, 2);
-    assert.strictEqual(nav.getLayer('A').children.length, 0);
+    assert.strictEqual(nav.getCurrentLayerUuid(), rootId);
+    assert.strictEqual(nav.getLayer(rootId).messages.length, 2);
+    assert.strictEqual(nav.getLayer(rootId).children.length, 0);
   });
 
   it('getTree returns correct structure', () => {
     const nav = new TreeNavigator();
+    const rootId = nav.getTree().id;
     nav.addMessage({ id: '1', sender: 'other', replyToId: null, content: 'a1', timestamp: 1 });
-    nav.addMessage({ id: '2', sender: 'self', replyToId: '1', content: 'b1', timestamp: 2 });
+    const b = nav.addMessage({ id: '2', sender: 'self', replyToId: '1', content: 'b1', timestamp: 2 });
 
     const tree = nav.getTree();
-    assert.strictEqual(tree.id, 'A');
+    assert.strictEqual(tree.id, rootId);
     assert.strictEqual(tree.children.length, 1);
-    assert.strictEqual(tree.children[0].id, 'B');
+    assert.strictEqual(tree.children[0].id, b.layerUuid);
   });
 
   it('treats replies to unknown message as append', () => {
     const nav = new TreeNavigator();
+    const rootId = nav.getTree().id;
     const out = nav.addMessage({ id: '1', sender: 'self', replyToId: 'missing', content: 'x', timestamp: 1 });
     assert.strictEqual(out.action, 'append');
-    assert.strictEqual(out.layerId, 'A');
+    assert.strictEqual(out.layerUuid, rootId);
   });
 
   it('bot root-anchor reply in sub-layer appends in current layer', () => {
     const nav = new TreeNavigator();
     nav.addMessage({ id: 'root', sender: 'self', replyToId: null, content: 'root', timestamp: 1 });
     nav.addMessage({ id: 'other', sender: 'other', replyToId: null, content: 'other', timestamp: 2 });
-    nav.addMessage({ id: 'branch', sender: 'self', replyToId: 'other', content: 'branch', timestamp: 3 });
+    const branch = nav.addMessage({ id: 'branch', sender: 'self', replyToId: 'other', content: 'branch', timestamp: 3 });
 
     const out = nav.addMessage({ id: 'bot', sender: 'bot', replyToId: 'root', content: 'bot', timestamp: 4 });
     assert.strictEqual(out.action, 'append');
-    assert.strictEqual(out.layerId, 'B');
+    assert.strictEqual(out.layerUuid, branch.layerUuid);
   });
 
   it('throws for unknown strategy action type', () => {
@@ -133,8 +133,9 @@ describe('TreeNavigator', () => {
 
   it('returns null for missing layer and handles missing root in getTree', () => {
     const nav = new TreeNavigator();
+    const rootId = nav.getTree().id;
     assert.strictEqual(nav.getLayer('NOPE'), null);
-    nav.layers.delete('A');
+    nav.layers.delete(rootId);
     assert.strictEqual(nav.getTree(), null);
   });
 });

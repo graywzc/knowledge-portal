@@ -68,20 +68,20 @@ describe('API contract tests', () => {
 
     expect(typeof res.body).toBe('object');
     expect(res.body).toHaveProperty('tree');
-    expect(res.body).toHaveProperty('currentLayerId');
+    expect(res.body).toHaveProperty('currentLayerUuid');
     expect(res.body).toHaveProperty('state');
 
-    expect(typeof res.body.currentLayerId).toBe('string');
+    expect(typeof res.body.currentLayerUuid).toBe('string');
     expect(typeof res.body.state).toBe('object');
     expect(typeof res.body.state.layers).toBe('object');
 
-    const layerA = res.body.state.layers.A;
-    expect(layerA).toBeTruthy();
-    expect(Array.isArray(layerA.messages)).toBe(true);
-    expect(Array.isArray(layerA.children)).toBe(true);
+    const rootLayer = res.body.state.layers[res.body.tree.id];
+    expect(rootLayer).toBeTruthy();
+    expect(Array.isArray(rootLayer.messages)).toBe(true);
+    expect(Array.isArray(rootLayer.children)).toBe(true);
   });
 
-  it('GET /api/sources/:source/channels/:channel/layers/:layerId returns 404 error schema when missing', async () => {
+  it('GET /api/sources/:source/channels/:channel/layers/:layerUuid returns 404 error schema when missing', async () => {
     const res = await request(app)
       .get('/api/sources/telegram/channels/55/layers/NOPE')
       .expect(404);

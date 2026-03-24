@@ -166,10 +166,10 @@
     let currentChannel = '';
     let isResizingSidebar = false;
     let currentTopicName = '';
-    let currentLayerId = 'A';
+    let currentLayerUuid = '';
     let pendingImageDataUrl = null;
     let viewState = null;
-    let expandedNodes = new Set(['A']);
+    let expandedNodes = new Set();
     let isSending = false;
     let realtimeStream = null;
     let realtimeRefreshPending = false;
@@ -177,7 +177,7 @@
     let contextTarget = null;
     let topicContextTarget = null;
     const pendingTopics = new Map();
-    const layerWipState = new Map(); // key: `${topicId}:${layerId}` -> { topicId, layerId, startAt, untilAt }
+    const layerWipState = new Map(); // key: `${topicId}:${layerUuid}` -> { topicId, layerUuid, startAt, untilAt }
 
     const md = window.markdownit({
       html: false,
@@ -250,17 +250,17 @@
       composer.classList.toggle('hidden', !enabled);
     }
 
-    function markLayerWip(topicId, layerId, ttlMs = 30000) {
-      if (!topicId || !layerId) return;
+    function markLayerWip(topicId, layerUuid, ttlMs = 30000) {
+      if (!topicId || !layerUuid) return;
       const now = Date.now();
-      const key = `${topicId}:${layerId}`;
-      layerWipState.set(key, { topicId: String(topicId), layerId: String(layerId), startAt: now, untilAt: now + ttlMs });
+      const key = `${topicId}:${layerUuid}`;
+      layerWipState.set(key, { topicId: String(topicId), layerUuid: String(layerUuid), startAt: now, untilAt: now + ttlMs });
       updateTopicWipUI();
     }
 
-    function clearLayerWip(topicId, layerId) {
-      if (!topicId || !layerId) return;
-      layerWipState.delete(`${topicId}:${layerId}`);
+    function clearLayerWip(topicId, layerUuid) {
+      if (!topicId || !layerUuid) return;
+      layerWipState.delete(`${topicId}:${layerUuid}`);
       updateTopicWipUI();
     }
 
@@ -276,9 +276,9 @@
       if (changed) updateTopicWipUI();
     }
 
-    function hasActiveWipForLayer(topicId, layerId) {
+    function hasActiveWipForLayer(topicId, layerUuid) {
       const now = Date.now();
-      const key = `${topicId}:${layerId}`;
+      const key = `${topicId}:${layerUuid}`;
       const v = layerWipState.get(key);
       return !!(v && now <= Number(v.untilAt || 0));
     }
@@ -286,10 +286,10 @@
     function updateTopicWipUI() {
       const rows = document.querySelectorAll('#tree .tree-node[data-layer-id]');
       rows.forEach((row) => {
-        const layerId = String(row.getAttribute('data-layer-id') || '');
+        const layerUuid = String(row.getAttribute('data-layer-id') || '');
         const dots = row.querySelector('.wip-dots');
-        if (!dots || !layerId || !currentChannel) return;
-        const active = hasActiveWipForLayer(currentChannel, layerId);
+        if (!dots || !layerUuid || !currentChannel) return;
+        const active = hasActiveWipForLayer(currentChannel, layerUuid);
         dots.classList.toggle('hidden', !active);
       });
     }
@@ -298,7 +298,7 @@
       if (!topicId || !viewState?.state?.layers) return;
       for (const [k, w] of [...layerWipState.entries()]) {
         if (String(w.topicId) !== String(topicId)) continue;
-        const layer = viewState.state.layers[w.layerId];
+        const layer = viewState.state.layers[w.layerUuid];
         if (!layer) continue;
 
         const hasBotReplyAfterStart = (layer.messages || []).some((m) =>
@@ -413,7 +413,7 @@
     }
 
     function getSelectedLayerAnchorReplyId() {
-      const layer = viewState?.state?.layers?.[currentLayerId];
+      const layer = viewState?.state?.layers?.[currentLayerUuid];
       if (!layer || !Array.isArray(layer.messages)) return Number(currentChannel);
 
       // Prefer replying to latest self message in the selected layer so replay
@@ -458,7 +458,7 @@
         }
 
         if (result && result.error) throw new Error(result.error);
-        markLayerWip(currentChannel, currentLayerId);
+        markLayerWip(currentChannel, currentLayerUuid);
         input.value = '';
         autoGrowComposerInput();
         clearPendingImage();
@@ -624,42 +624,43 @@
       try { return localStorage.getItem(topicStateKey(source, channel)); } catch (_) { return null; }
     }
 
-    function saveCurrentLayer(source, channel, layerId) {
-      try { localStorage.setItem(topicStateKey(source, channel), layerId); } catch (_) {}
+    function saveCurrentLayer(source, channel, layerUuid) {
+      try { localStorage.setItem(topicStateKey(source, channel), layerUuid); } catch (_) {}
     }
 
-    function expandPathToLayer(layerId) {
-      let cur = layerId;
+    function expandPathToLayer(layerUuid) {
+      let cur = layerUuid;
       while (cur) {
         expandedNodes.add(cur);
-        const p = viewState?.state?.layers?.[cur]?.parentLayerId || null;
+        const p = viewState?.state?.layers?.[cur]?.parentLayerUuid || null;
         cur = p;
       }
-      expandedNodes.add('A');
+      const rootId = viewState?.tree?.id || null;
+      if (rootId) expandedNodes.add(rootId);
     }
 
     async function loadView(source, channel) {
       viewState = await api('GET', `/sources/${encodeURIComponent(source)}/channels/${encodeURIComponent(channel)}/view`);
       const saved = getSavedLayer(source, channel);
       const exists = saved && viewState?.state?.layers?.[saved];
-      currentLayerId = exists ? saved : viewState.currentLayerId;
-      expandPathToLayer(currentLayerId);
+      currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
+      expandPathToLayer(currentLayerUuid);
       renderTree(viewState.tree);
-      showLayer(currentLayerId);
+      showLayer(currentLayerUuid);
       updateComposerVisibility();
       reconcileLayerWipFromView(channel);
       cleanupLayerWip();
     }
 
-    function layerTitle(layerId) {
-      if (layerId === 'A' && currentTopicName) return currentTopicName;
-      const layer = viewState?.state?.layers?.[layerId];
-      if (!layer || !layer.messages || layer.messages.length === 0) return `Layer ${layerId}`;
+    function layerTitle(layerUuid) {
+      if (layerUuid === viewState?.tree?.id && currentTopicName) return currentTopicName;
+      const layer = viewState?.state?.layers?.[layerUuid];
+      if (!layer || !layer.messages || layer.messages.length === 0) return `Layer ${layerUuid}`;
 
       const raw = String(layer.messages[0].content || '');
       const firstRow = raw.split(/\r?\n/).find(line => line.trim().length > 0) || '';
       const normalized = firstRow.replace(/\s+/g, ' ').trim();
-      return normalized || `Layer ${layerId}`;
+      return normalized || `Layer ${layerUuid}`;
     }
 
     function renderTree(node, container) {
@@ -673,7 +674,7 @@
       const isExpanded = expandedNodes.has(node.id);
 
       const div = document.createElement('div');
-      div.className = 'tree-node' + (node.id === currentLayerId ? ' active' : '');
+      div.className = 'tree-node' + (node.id === currentLayerUuid ? ' active' : '');
       div.title = `${layerTitle(node.id)} (${node.messageCount} msgs)`;
       div.setAttribute('data-layer-id', String(node.id));
 
@@ -716,19 +717,19 @@
       return p ? `${appBasePath}/media/${encodeURI(p)}` : null;
     }
 
-    function showLayer(layerId, focusMessageId = null) {
+    function showLayer(layerUuid, focusMessageId = null) {
       if (!viewState) return;
-      currentLayerId = layerId;
-      expandPathToLayer(layerId);
-      saveCurrentLayer(currentSource, currentChannel, layerId);
+      currentLayerUuid = layerUuid;
+      expandPathToLayer(layerUuid);
+      saveCurrentLayer(currentSource, currentChannel, layerUuid);
       const layers = viewState.state.layers;
-      const layer = layers[layerId];
+      const layer = layers[layerUuid];
       if (!layer) return;
 
       const header = document.getElementById('layer-header');
-      const title = layerTitle(layerId);
-      if (layer.parentLayerId && layer.branchFromMessageId) {
-        header.innerHTML = `${escapeHtml(title)} <a class="back-link" onclick="showLayer('${layer.parentLayerId}', '${layer.branchFromMessageId}')">↩ back to parent msg #${escapeHtml(getShortChatId(layer.branchFromMessageId))}</a>`;
+      const title = layerTitle(layerUuid);
+      if (layer.parentLayerUuid && layer.branchFromMessageId) {
+        header.innerHTML = `${escapeHtml(title)} <a class="back-link" onclick="showLayer('${layer.parentLayerUuid}', '${layer.branchFromMessageId}')">↩ back to parent msg #${escapeHtml(getShortChatId(layer.branchFromMessageId))}</a>`;
       } else {
         header.textContent = title;
       }
@@ -745,7 +746,11 @@
       const branchPoints = {};
       for (const child of (layer.children || [])) {
         if (!branchPoints[child.branchFromMessageId]) branchPoints[child.branchFromMessageId] = [];
-        branchPoints[child.branchFromMessageId].push(child.layerId);
+        const childLayer = layers[child.layerUuid] || null;
+        branchPoints[child.branchFromMessageId].push({
+          layerUuid: child.layerUuid,
+          firstMessageId: childLayer?.firstMessageId || null,
+        });
       }
 
       layer.messages.forEach((m) => {
@@ -771,8 +776,9 @@
         html += `<div class="meta">${m.sender}`;
         if (m.replyToId) html += ` · reply to ${m.replyToId}`;
         if (branchPoints[m.id]) {
-          branchPoints[m.id].forEach(childLayerId => {
-            html += `<span class="branch-badge" onclick="showLayer('${childLayerId}')">→ ${childLayerId}</span>`;
+          branchPoints[m.id].forEach((child) => {
+            const short = child.firstMessageId ? getShortChatId(child.firstMessageId) : child.layerUuid;
+            html += `<span class="branch-badge" onclick="showLayer('${child.layerUuid}')">→ #${escapeHtml(String(short))}</span>`;
           });
         }
         html += '</div>';

@@ -15,6 +15,30 @@
  * - Reply to own message → jump back to that layer, append at end
  */
 
+const crypto = require('crypto');
+
+const LAYER_UUID_NAMESPACE = '6f0e1d9e-7d85-4f7f-9a4d-3f3c2b0ec001';
+
+function uuidToBytes(uuid) {
+  const hex = String(uuid).replace(/-/g, '');
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) throw new Error('invalid UUID namespace');
+  return Buffer.from(hex, 'hex');
+}
+
+function bytesToUuid(buf) {
+  const h = buf.toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+function uuidv5(name, namespace = LAYER_UUID_NAMESPACE) {
+  const ns = uuidToBytes(namespace);
+  const hash = crypto.createHash('sha1').update(Buffer.concat([ns, Buffer.from(String(name), 'utf8')])).digest();
+  const out = Buffer.from(hash.subarray(0, 16));
+  out[6] = (out[6] & 0x0f) | 0x50; // version 5
+  out[8] = (out[8] & 0x3f) | 0x80; // variant RFC4122
+  return bytesToUuid(out);
+}
+
 class TreeNavigator {
   /**
    * @param {object} opts
@@ -22,18 +46,21 @@ class TreeNavigator {
    */
   constructor(opts = {}) {
     this.strategy = opts.strategy || new DefaultNavigationStrategy();
-    this.layers = new Map();       // layerId -> Layer
-    this.messageIndex = new Map(); // messageId -> { layerId, position }
-    this.layerCounter = 0;
-    this.currentLayerId = null;
+    this.source = String(opts.source || 'unknown');
+    this.channel = String(opts.channel || 'unknown');
+    this.rootMessageId = String(opts.rootMessageId || `${this.source}:${this.channel}:root`);
+    this.layers = new Map();       // layerUuid(uuid) -> Layer
+    this.messageIndex = new Map(); // messageId -> { layerUuid(uuid), position }
+    this.layerCounter = 0;         // display label counter only
+    this.currentLayerUuid = null;
+    this.rootLayerUuid = null;
 
     // Create root layer
-    this._createLayer(null, null);
+    this._createRootLayer();
   }
 
   _nextLayerLabel() {
     const idx = this.layerCounter++;
-    // A, B, C, ..., Z, AA, AB, ...
     let label = '';
     let n = idx;
     do {
@@ -43,22 +70,42 @@ class TreeNavigator {
     return label;
   }
 
-  _createLayer(parentLayerId, branchFromMessageId) {
-    const id = this._nextLayerLabel();
+  _computeLayerUuidFromFirstMessage(firstMessageId) {
+    return uuidv5(String(firstMessageId));
+  }
+
+  _createRootLayer() {
+    const id = this._computeLayerUuidFromFirstMessage(this.rootMessageId);
     const layer = {
       id,
-      parentLayerId,
-      branchFromMessageId,
+      label: this._nextLayerLabel(),
+      firstMessageId: this.rootMessageId,
+      parentLayerUuid: null,
+      branchFromMessageId: null,
       messages: [],
-      children: [],  // { layerId, branchFromMessageId }
+      children: [],  // { layerUuid, branchFromMessageId }
     };
     this.layers.set(id, layer);
-    if (this.currentLayerId === null) {
-      this.currentLayerId = id;
-    }
-    if (parentLayerId) {
-      const parent = this.layers.get(parentLayerId);
-      parent.children.push({ layerId: id, branchFromMessageId });
+    this.rootLayerUuid = id;
+    this.currentLayerUuid = id;
+    return layer;
+  }
+
+  _createLayer(parentLayerUuid, branchFromMessageId, firstMessageId) {
+    const id = this._computeLayerUuidFromFirstMessage(firstMessageId);
+    const layer = {
+      id,
+      label: this._nextLayerLabel(),
+      firstMessageId: String(firstMessageId),
+      parentLayerUuid,
+      branchFromMessageId,
+      messages: [],
+      children: [],  // { layerUuid, branchFromMessageId }
+    };
+    this.layers.set(id, layer);
+    if (parentLayerUuid) {
+      const parent = this.layers.get(parentLayerUuid);
+      parent.children.push({ layerUuid: id, branchFromMessageId });
     }
     return layer;
   }
@@ -72,33 +119,33 @@ class TreeNavigator {
    * @param {string|null} msg.replyToId - id of message being replied to, or null
    * @param {*} msg.content - message content (opaque to this module)
    * @param {number} msg.timestamp - epoch ms
-   * @returns {{ layerId: string, action: string }} - where message was placed and what happened
+   * @returns {{ layerUuid: string, action: string }} - where message was placed and what happened
    */
   addMessage(msg) {
     const action = this.strategy.decide(this, msg);
-    let targetLayerId;
+    let targetLayerUuid;
 
     switch (action.type) {
       case 'append': {
-        targetLayerId = this.currentLayerId;
+        targetLayerUuid = this.currentLayerUuid;
         break;
       }
       case 'branch': {
-        const newLayer = this._createLayer(action.fromLayerId, msg.replyToId);
-        targetLayerId = newLayer.id;
-        this.currentLayerId = newLayer.id;
+        const newLayer = this._createLayer(action.fromLayerUuid, msg.replyToId, msg.id);
+        targetLayerUuid = newLayer.id;
+        this.currentLayerUuid = newLayer.id;
         break;
       }
       case 'jump': {
-        targetLayerId = action.toLayerId;
-        this.currentLayerId = action.toLayerId;
+        targetLayerUuid = action.toLayerUuid;
+        this.currentLayerUuid = action.toLayerUuid;
         break;
       }
       default:
         throw new Error(`Unknown action type: ${action.type}`);
     }
 
-    const layer = this.layers.get(targetLayerId);
+    const layer = this.layers.get(targetLayerUuid);
     const position = layer.messages.length;
     layer.messages.push({
       id: msg.id,
@@ -113,9 +160,9 @@ class TreeNavigator {
       replyToId: msg.replyToId,
       entities: msg.entities || null,
     });
-    this.messageIndex.set(msg.id, { layerId: targetLayerId, position });
+    this.messageIndex.set(msg.id, { layerUuid: targetLayerUuid, position });
 
-    return { layerId: targetLayerId, action: action.type };
+    return { layerUuid: targetLayerUuid, action: action.type };
   }
 
   /** Get a layer by id */
@@ -125,7 +172,7 @@ class TreeNavigator {
 
   /** Get all layers as a tree structure */
   getTree() {
-    const root = this.layers.get('A');
+    const root = this.layers.get(this.rootLayerUuid);
     if (!root) return null;
     return this._buildSubtree(root);
   }
@@ -135,7 +182,7 @@ class TreeNavigator {
       id: layer.id,
       messageCount: layer.messages.length,
       children: layer.children.map(c => {
-        const childLayer = this.layers.get(c.layerId);
+        const childLayer = this.layers.get(c.layerUuid);
         return {
           branchFromMessageId: c.branchFromMessageId,
           ...this._buildSubtree(childLayer),
@@ -150,30 +197,40 @@ class TreeNavigator {
   }
 
   /** Get current layer id */
-  getCurrentLayerId() {
-    return this.currentLayerId;
+  getCurrentLayerUuid() {
+    return this.currentLayerUuid;
   }
 
   /** Export full state (for persistence) */
   exportState() {
     return {
+      source: this.source,
+      channel: this.channel,
+      rootMessageId: this.rootMessageId,
+      rootLayerUuid: this.rootLayerUuid,
       layers: Object.fromEntries(this.layers),
-      currentLayerId: this.currentLayerId,
+      currentLayerUuid: this.currentLayerUuid,
       layerCounter: this.layerCounter,
     };
   }
 
   /** Import state (from persistence) */
   static fromState(state, opts = {}) {
-    const nav = new TreeNavigator(opts);
+    const nav = new TreeNavigator({
+      source: state.source || opts.source,
+      channel: state.channel || opts.channel,
+      rootMessageId: state.rootMessageId || opts.rootMessageId,
+      strategy: opts.strategy,
+    });
     nav.layers = new Map(Object.entries(state.layers));
-    nav.currentLayerId = state.currentLayerId;
+    nav.currentLayerUuid = state.currentLayerUuid;
     nav.layerCounter = state.layerCounter;
+    nav.rootLayerUuid = state.rootLayerUuid || nav.rootLayerUuid;
     // Rebuild message index
     nav.messageIndex = new Map();
-    for (const [layerId, layer] of nav.layers) {
+    for (const [layerUuid, layer] of nav.layers) {
       layer.messages.forEach((msg, position) => {
-        nav.messageIndex.set(msg.id, { layerId, position });
+        nav.messageIndex.set(msg.id, { layerUuid, position });
       });
     }
     return nav;
@@ -182,7 +239,7 @@ class TreeNavigator {
 
 /**
  * NavigationStrategy interface:
- *   decide(navigator, msg) → { type: 'append' } | { type: 'branch', fromLayerId } | { type: 'jump', toLayerId }
+ *   decide(navigator, msg) → { type: 'append' } | { type: 'branch', fromLayerUuid } | { type: 'jump', toLayerUuid }
  */
 
 class DefaultNavigationStrategy {
@@ -204,23 +261,23 @@ class DefaultNavigationStrategy {
       return { type: 'append' };
     }
 
-    const repliedLayer = navigator.getLayer(loc.layerId);
+    const repliedLayer = navigator.getLayer(loc.layerUuid);
     const repliedMsg = repliedLayer.messages[loc.position];
 
-    const isRootAnchorReply = (loc.layerId === 'A' && loc.position === 0);
+    const isRootAnchorReply = (loc.layerUuid === navigator.rootLayerUuid && loc.position === 0);
 
     if (msg.sender === 'bot') {
       // Telegram bots in forum topics often reply to the topic starter/root message
       // even when they are contextually answering the latest message in a sub-layer.
-      if (isRootAnchorReply && navigator.currentLayerId !== 'A') {
+      if (isRootAnchorReply && navigator.currentLayerUuid !== navigator.rootLayerUuid) {
         return { type: 'append' };
       }
 
       // Otherwise keep bot in the layer of the replied message.
-      return { type: 'jump', toLayerId: loc.layerId };
+      return { type: 'jump', toLayerUuid: loc.layerUuid };
     }
 
-    if (msg.sender === 'self' && isRootAnchorReply && navigator.currentLayerId !== 'A') {
+    if (msg.sender === 'self' && isRootAnchorReply && navigator.currentLayerUuid !== navigator.rootLayerUuid) {
       // Same forum quirk for user asks: replying to topic root is often just
       // a transport-level thread anchor, not intent to jump back to root layer.
       return { type: 'append' };
@@ -228,10 +285,10 @@ class DefaultNavigationStrategy {
 
     if (repliedMsg.sender !== msg.sender) {
       // Reply to other's message → branch
-      return { type: 'branch', fromLayerId: loc.layerId };
+      return { type: 'branch', fromLayerUuid: loc.layerUuid };
     } else {
       // Reply to own message → jump back
-      return { type: 'jump', toLayerId: loc.layerId };
+      return { type: 'jump', toLayerUuid: loc.layerUuid };
     }
   }
 }

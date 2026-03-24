@@ -10,14 +10,14 @@ function flush() {
 function makeView({ empty = false, withBranch = false, withImage = false } = {}) {
   const layerA = {
     id: 'A',
-    parentLayerId: null,
+    parentLayerUuid: null,
     branchFromMessageId: null,
     messages: empty
       ? []
       : [withImage
         ? { id: 'tg:-100:1', sender: 'self', content: '[media]', contentType: 'image', mediaPath: 'telegram/-100/55/1.jpg', timestamp: 1700000000000 }
         : { id: 'tg:-100:1', sender: 'self', content: 'root msg', timestamp: 1700000000000 }],
-    children: withBranch ? [{ layerId: 'B', branchFromMessageId: 'tg:-100:1' }] : [],
+    children: withBranch ? [{ layerUuid: 'B', branchFromMessageId: 'tg:-100:1' }] : [],
   };
 
   const layers = { A: layerA };
@@ -26,7 +26,7 @@ function makeView({ empty = false, withBranch = false, withImage = false } = {})
   if (withBranch) {
     layers.B = {
       id: 'B',
-      parentLayerId: 'A',
+      parentLayerUuid: 'A',
       branchFromMessageId: 'tg:-100:1',
       messages: [{ id: 'tg:-100:2', sender: 'other', content: 'branch msg', timestamp: 1700000001000 }],
       children: [],
@@ -34,7 +34,7 @@ function makeView({ empty = false, withBranch = false, withImage = false } = {})
     tree.children.push({ id: 'B', messageCount: 1, branchFromMessageId: 'tg:-100:1', children: [] });
   }
 
-  return { currentLayerId: 'A', tree, state: { layers } };
+  return { currentLayerUuid: 'A', tree, state: { layers } };
 }
 
 function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topic 55' }] } = {}) {
@@ -392,7 +392,7 @@ describe('web component behavior (index.html)', () => {
 
   it('keeps previously expanded tree branches when navigating to another layer', async () => {
     const view = {
-      currentLayerId: 'A',
+      currentLayerUuid: 'A',
       tree: {
         id: 'A',
         messageCount: 1,
@@ -405,10 +405,10 @@ describe('web component behavior (index.html)', () => {
       },
       state: {
         layers: {
-          A: { id: 'A', parentLayerId: null, branchFromMessageId: null, messages: [{ id: 'tg:-100:1', sender: 'self', content: 'root', timestamp: 1 }], children: [{ layerId: 'B', branchFromMessageId: 'tg:-100:1' }, { layerId: 'C', branchFromMessageId: 'tg:-100:1' }] },
-          B: { id: 'B', parentLayerId: 'A', branchFromMessageId: 'tg:-100:1', messages: [{ id: 'tg:-100:2', sender: 'other', content: 'b', timestamp: 2 }], children: [{ layerId: 'D', branchFromMessageId: 'tg:-100:2' }] },
-          C: { id: 'C', parentLayerId: 'A', branchFromMessageId: 'tg:-100:1', messages: [{ id: 'tg:-100:3', sender: 'other', content: 'c', timestamp: 3 }], children: [] },
-          D: { id: 'D', parentLayerId: 'B', branchFromMessageId: 'tg:-100:2', messages: [{ id: 'tg:-100:4', sender: 'other', content: 'd', timestamp: 4 }], children: [] },
+          A: { id: 'A', parentLayerUuid: null, branchFromMessageId: null, messages: [{ id: 'tg:-100:1', sender: 'self', content: 'root', timestamp: 1 }], children: [{ layerUuid: 'B', branchFromMessageId: 'tg:-100:1' }, { layerUuid: 'C', branchFromMessageId: 'tg:-100:1' }] },
+          B: { id: 'B', parentLayerUuid: 'A', branchFromMessageId: 'tg:-100:1', messages: [{ id: 'tg:-100:2', sender: 'other', content: 'b', timestamp: 2 }], children: [{ layerUuid: 'D', branchFromMessageId: 'tg:-100:2' }] },
+          C: { id: 'C', parentLayerUuid: 'A', branchFromMessageId: 'tg:-100:1', messages: [{ id: 'tg:-100:3', sender: 'other', content: 'c', timestamp: 3 }], children: [] },
+          D: { id: 'D', parentLayerUuid: 'B', branchFromMessageId: 'tg:-100:2', messages: [{ id: 'tg:-100:4', sender: 'other', content: 'd', timestamp: 4 }], children: [] },
         },
       },
     };
