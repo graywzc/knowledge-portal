@@ -16,6 +16,9 @@
     #sidebar h2 { font-size: 14px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
     #sidebar select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; font-size: 13px; }
     .sidebar-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .topics-tabs { display: inline-flex; gap: 8px; align-items: baseline; }
+    .topics-tab { font-size: 12px; color: #6b7280; cursor: pointer; user-select: none; }
+    .topics-tab.active { color: #4a6cf7; font-weight: 700; }
     .sidebar-mini-btn { border: 1px solid #3a4f80; background: #22345a; color: #d7e6ff; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
     .sidebar-mini-btn:hover { background: #2a4373; }
 
@@ -123,7 +126,10 @@
     </div>
     <div>
       <div class="sidebar-row">
-        <h2>Topics</h2>
+        <div class="topics-tabs">
+          <h2 id="topics-tab-active" class="topics-tab active">TOPICS</h2>
+          <h2 id="topics-tab-archived" class="topics-tab">ARCHIVES</h2>
+        </div>
         <button id="create-topic-btn" class="sidebar-mini-btn" type="button">+ Topic</button>
       </div>
       <select id="channel-select" style="display:none;"></select>
@@ -156,6 +162,7 @@
     <button id="ctx-reply-btn" type="button">Reply</button>
   </div>
   <div id="topic-context-menu">
+    <button id="ctx-hide-topic-btn" type="button">Archive Topic</button>
     <button id="ctx-delete-topic-btn" type="button">Delete Topic</button>
   </div>
   <div id="layer-context-menu">
@@ -172,6 +179,8 @@
     let currentTopicName = '';
     let currentLayerUuid = '';
     let pendingImageDataUrl = null;
+    let currentTopicDeletedAt = null;
+    let topicsViewMode = 'active'; // active | archived
     let viewState = null;
     let expandedNodes = new Set();
     let isSending = false;
@@ -252,8 +261,18 @@
 
     function updateComposerVisibility() {
       const composer = document.getElementById('composer');
-      const enabled = (currentSource === 'telegram' && !!currentChannel);
+      const enabled = (currentSource === 'telegram' && !!currentChannel && !currentTopicDeletedAt);
       composer.classList.toggle('hidden', !enabled);
+    }
+
+    function setTopicsViewMode(mode) {
+      topicsViewMode = (mode === 'archived') ? 'archived' : 'active';
+      const a = document.getElementById('topics-tab-active');
+      const b = document.getElementById('topics-tab-archived');
+      const createBtn = document.getElementById('create-topic-btn');
+      a.classList.toggle('active', topicsViewMode === 'active');
+      b.classList.toggle('active', topicsViewMode === 'archived');
+      createBtn.style.display = topicsViewMode === 'archived' ? 'none' : 'inline-block';
     }
 
     function markLayerWip(topicId, layerUuid, ttlMs = 30000) {
@@ -372,6 +391,10 @@
     function openTopicContextMenu(x, y, topicInfo) {
       topicContextTarget = topicInfo;
       const menu = document.getElementById('topic-context-menu');
+      const hideBtn = document.getElementById('ctx-hide-topic-btn');
+      const delBtn = document.getElementById('ctx-delete-topic-btn');
+      hideBtn.textContent = topicInfo?.archived ? 'Unarchive Topic' : 'Archive Topic';
+      delBtn.style.display = topicInfo?.deletedAt ? 'none' : 'block';
       menu.style.display = 'block';
       menu.style.left = `${x}px`;
       menu.style.top = `${y}px`;
@@ -561,39 +584,57 @@
       }
 
       if (result?.topicId) {
-        pendingTopics.set(String(result.topicId), { name: trimmed });
+        pendingTopics.set(String(result.topicId), { name: trimmed, topicUUID: result.topicUUID || null });
       }
 
       await loadChannels('telegram');
       if (result?.topicId) {
         currentChannel = String(result.topicId);
         currentTopicName = trimmed;
+        currentTopicDeletedAt = null;
         updateComposerVisibility();
         await loadView(currentSource, currentChannel);
         startRealtimeStream();
       }
     }
 
-    async function deleteTopicFromUI(topicId, topicName) {
-      if (currentSource !== 'telegram') return;
-      const ok = window.confirm(`Delete topic "${topicName}"? This will delete topic history on Telegram.`);
-      if (!ok) return;
-
-      const result = await api('POST', '/telegram/topics/delete', { topicId: Number(topicId) });
+    async function hideTopicFromUI(topicUUID, archived) {
+      if (!topicUUID) return;
+      const result = await api('POST', `/topics/${encodeURIComponent(topicUUID)}/archive`, { archived: !!archived });
       if (result?.error) {
-        alert(`Delete topic failed: ${result.error}`);
+        alert(`${archived ? 'Archive' : 'Unarchive'} topic failed: ${result.error}`);
         return;
       }
-
-      if (String(currentChannel) === String(topicId)) {
+      if (archived && topicContextTarget && String(currentChannel) === String(topicContextTarget.id)) {
         currentChannel = '';
         currentTopicName = '';
         document.getElementById('messages').innerHTML = '<div id="empty-state">Select a topic to view messages</div>';
         updateComposerVisibility();
         stopRealtimeStream();
       }
+      await loadChannels('telegram');
+    }
+
+    async function deleteTopicFromUI(topicUUID, topicId, topicName, chatId) {
+      if (currentSource !== 'telegram') return;
+      const ok = window.confirm(`Delete topic "${topicName}" on Telegram? KP will keep history as read-only.`);
+      if (!ok) return;
+
+      const result = await api('POST', `/topics/${encodeURIComponent(topicUUID)}/delete`, { chatId, topicId });
+      if (result?.error) {
+        alert(`Delete topic failed: ${result.error}`);
+        return;
+      }
+
+      if (String(currentChannel) === String(topicId)) {
+        currentTopicDeletedAt = Date.now();
+        updateComposerVisibility();
+      }
 
       await loadChannels('telegram');
+      if (String(currentChannel) === String(topicId)) {
+        await loadView(currentSource, currentChannel);
+      }
     }
 
     async function loadChannels(source) {
@@ -604,13 +645,22 @@
       sel.innerHTML = '';
 
       if (source === 'telegram') {
-        const fetched = await api('GET', '/telegram/topics');
-        const topics = Array.isArray(fetched) ? [...fetched] : [];
+        const fetched = await api('GET', `/telegram/topics?includeArchived=true`);
+        let topics = Array.isArray(fetched) ? [...fetched] : [];
+        topics = topics.filter(t => topicsViewMode === 'archived' ? !!t.archived : !t.archived);
 
         // Merge locally-created topics that may not be ingested yet.
         for (const [id, t] of pendingTopics.entries()) {
           if (!topics.some(x => String(x.id) === String(id))) {
-            topics.unshift({ id: String(id), name: t.name, messageCount: 0, lastTimestamp: Date.now() });
+            topics.unshift({
+              id: String(id),
+              topicUUID: t.topicUUID || null,
+              name: t.name,
+              messageCount: 0,
+              lastTimestamp: Date.now(),
+              archived: false,
+              deletedAt: null,
+            });
           } else {
             pendingTopics.delete(String(id));
           }
@@ -628,12 +678,13 @@
 
           const label = document.createElement('span');
           label.className = 'topic-label';
-          label.textContent = `${t.name} (${t.messageCount})`;
+          label.textContent = `${t.name} (${t.messageCount})${t.deletedAt ? ' [deleted]' : ''}`;
           row.appendChild(label);
 
           row.onclick = async () => {
             currentChannel = t.id;
             currentTopicName = t.name || '';
+            currentTopicDeletedAt = t.deletedAt || null;
             sel.value = t.id;
             updateComposerVisibility();
             await loadView(currentSource, currentChannel);
@@ -642,7 +693,14 @@
 
           row.oncontextmenu = (e) => {
             e.preventDefault();
-            openTopicContextMenu(e.clientX, e.clientY, { id: t.id, name: t.name || t.id });
+            openTopicContextMenu(e.clientX, e.clientY, {
+              id: t.id,
+              chatId: t.chatId || null,
+              name: t.name || t.id,
+              topicUUID: t.topicUUID || null,
+              archived: !!t.archived,
+              deletedAt: t.deletedAt || null,
+            });
           };
           topicList.appendChild(row);
         });
@@ -1005,9 +1063,17 @@
       closeContextMenu();
     };
 
+    document.getElementById('ctx-hide-topic-btn').onclick = async () => {
+      if (topicContextTarget?.topicUUID) {
+        const nextArchived = !Boolean(topicContextTarget.archived);
+        await hideTopicFromUI(topicContextTarget.topicUUID, nextArchived);
+      }
+      closeTopicContextMenu();
+    };
+
     document.getElementById('ctx-delete-topic-btn').onclick = async () => {
-      if (topicContextTarget) {
-        await deleteTopicFromUI(topicContextTarget.id, topicContextTarget.name);
+      if (topicContextTarget?.topicUUID) {
+        await deleteTopicFromUI(topicContextTarget.topicUUID, topicContextTarget.id, topicContextTarget.name, topicContextTarget.chatId);
       }
       closeTopicContextMenu();
     };
@@ -1027,10 +1093,22 @@
       if (!e.target.closest('#layer-context-menu')) closeLayerContextMenu();
     });
 
+    document.getElementById('topics-tab-active').onclick = async () => {
+      setTopicsViewMode('active');
+      if (currentSource === 'telegram') await loadChannels('telegram');
+    };
+
+    document.getElementById('topics-tab-archived').onclick = async () => {
+      setTopicsViewMode('archived');
+      if (currentSource === 'telegram') await loadChannels('telegram');
+    };
+
     document.getElementById('source-select').onchange = async (e) => {
       currentSource = e.target.value;
       currentChannel = '';
       currentTopicName = '';
+      currentTopicDeletedAt = null;
+      if (currentSource !== 'telegram') setTopicsViewMode('active');
       updateComposerVisibility();
       stopRealtimeStream();
       closeTopicContextMenu();
@@ -1041,6 +1119,7 @@
       currentChannel = e.target.value;
       const opt = e.target.selectedOptions && e.target.selectedOptions[0];
       currentTopicName = opt ? opt.textContent : '';
+      currentTopicDeletedAt = null;
       updateComposerVisibility();
       if (currentSource && currentChannel) {
         await loadView(currentSource, currentChannel);

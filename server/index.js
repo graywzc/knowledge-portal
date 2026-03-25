@@ -103,7 +103,8 @@ app.get('/api/sources/:source/channels', (req, res) => {
 app.get('/api/telegram/topics', (req, res) => {
   const chatId = req.query.chatId || process.env.TG_CHAT_ID || process.env.TELEGRAM_CHAT_ID || db.getPrimaryTelegramChatId();
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
-  res.json(db.getTelegramTopics(chatId));
+  const includeArchived = String(req.query.includeArchived || '').toLowerCase() === 'true';
+  res.json(db.getTelegramTopics(chatId, { includeArchived }));
 });
 
 /** Get tree for a source+channel */
@@ -220,6 +221,11 @@ app.post('/api/telegram/topics/create', async (req, res) => {
       title: String(title).trim(),
     });
 
+    if (result?.topicId) {
+      const topicUUID = db.getOrCreateTopicUUID('telegram', String(resolvedChatId), String(result.topicId));
+      return res.json({ ...result, topicUUID });
+    }
+
     return res.json(result);
   } catch (err) {
     const msg = String(err?.message || err);
@@ -228,30 +234,42 @@ app.post('/api/telegram/topics/create', async (req, res) => {
   }
 });
 
-/** Delete telegram forum topic */
-app.post('/api/telegram/topics/delete', async (req, res) => {
+/** Archive/unarchive a topic in KP sidebar */
+app.post('/api/topics/:topicUUID/archive', (req, res) => {
+  const topicUUID = String(req.params.topicUUID || '');
+  if (!topicUUID) return res.status(400).json({ error: 'topicUUID required' });
+
+  const t = db.getTopicByUUID(topicUUID);
+  if (!t) return res.status(404).json({ error: 'topic not found' });
+
+  const archived = (typeof req.body?.archived === 'boolean') ? req.body.archived : true;
+  db.setTopicArchived(topicUUID, archived);
+  return res.json({ ok: true, topicUUID, archived });
+});
+
+/** Delete topic on Telegram and mark deleted_at in KP */
+app.post('/api/topics/:topicUUID/delete', async (req, res) => {
   try {
-    const { chatId, topicId } = req.body || {};
-    const resolvedChatId = chatId
-      || process.env.TG_CHAT_ID
-      || process.env.TELEGRAM_CHAT_ID
-      || db.getPrimaryTelegramChatId();
+    const topicUUID = String(req.params.topicUUID || '');
+    if (!topicUUID) return res.status(400).json({ error: 'topicUUID required' });
 
-    if (topicId === undefined || topicId === null || topicId === '') {
-      return res.status(400).json({ error: 'topicId required' });
-    }
-    const resolvedTopicId = Number(topicId);
-    if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
-    if (!Number.isFinite(resolvedTopicId)) return res.status(400).json({ error: 'topicId required' });
+    const topic = db.getTopicByUUID(topicUUID);
+    if (!topic) return res.status(404).json({ error: 'topic not found' });
+    if (topic.source !== 'telegram') return res.status(400).json({ error: 'only telegram topic delete supported' });
+    if (topic.deleted_at) return res.status(400).json({ error: 'topic already deleted' });
 
-    const result = await sender.deleteTopic({
-      chatId: String(resolvedChatId),
-      topicId: resolvedTopicId,
-    });
+    const reqChatId = req.body?.chatId;
+    const reqTopicId = req.body?.topicId;
 
-    db.deleteTelegramTopic(String(resolvedChatId), String(resolvedTopicId));
+    const chatId = String(reqChatId || process.env.TG_CHAT_ID || process.env.TELEGRAM_CHAT_ID || db.getPrimaryTelegramChatId() || '');
+    const topicId = Number(reqTopicId);
+    if (!chatId) return res.status(400).json({ error: 'chatId required' });
+    if (!Number.isFinite(topicId)) return res.status(400).json({ error: 'topicId required' });
 
-    return res.json(result);
+    await sender.deleteTopic({ chatId, topicId });
+    db.setTopicDeletedAt(topicUUID, Date.now());
+
+    return res.json({ ok: true, topicUUID, deletedAt: db.getTopicByUUID(topicUUID)?.deleted_at || null });
   } catch (err) {
     const msg = String(err?.message || err);
     if (msg.includes('required')) return res.status(400).json({ error: msg });
@@ -307,6 +325,11 @@ app.post('/api/telegram/send', async (req, res) => {
     if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
     if (!text || !String(text).trim()) return res.status(400).json({ error: 'text required' });
     if (String(text).length > 4096) return res.status(400).json({ error: 'text too long (max 4096)' });
+
+    const replyTopicId = Number(replyToId);
+    if (Number.isFinite(replyTopicId) && db.isTelegramTopicDeleted(String(resolvedChatId), String(replyTopicId))) {
+      return res.status(409).json({ error: 'topic is deleted on telegram; chat is read-only' });
+    }
 
     const result = await sender.sendText({
       chatId: String(resolvedChatId),

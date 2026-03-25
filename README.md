@@ -93,9 +93,10 @@ It reads credentials/session from:
 - `GET /api/state` — export state
 - `POST /api/state` — import state
 - `POST /api/reset` — reset to empty
-- `POST /api/telegram/send` — send Telegram text `{ chatId?, text, replyToId? }` (`chatId` falls back to `TG_CHAT_ID`/primary Telegram chat)
-- `POST /api/telegram/topics/create` — create Telegram forum topic `{ chatId?, title }`
-- `POST /api/telegram/topics/delete` — delete Telegram forum topic `{ chatId?, topicId }`
+- `POST /api/telegram/send` — send Telegram text `{ chatId?, text, replyToId? }` (`chatId` falls back to `TG_CHAT_ID`/primary Telegram chat); blocked when target topic is marked deleted
+- `POST /api/telegram/topics/create` — create Telegram forum topic `{ chatId?, title }` (returns `topicUUID`)
+- `POST /api/topics/:topicUUID/archive` — hide topic from sidebar (`archived=true`)
+- `POST /api/topics/:topicUUID/delete` — delete topic on Telegram and mark `deleted_at` (history kept in KP)
 
 ## Test
 
