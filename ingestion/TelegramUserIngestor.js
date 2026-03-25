@@ -37,27 +37,27 @@ class TelegramUserIngestor {
     console.log('[MTProto] Logged in. Session saved:', this.sessionPath);
   }
 
-  _stateKey() {
+  #stateKey() {
     return `mtproto_last_id:${this.chatId}:${this.topicId || 'all'}`;
   }
 
-  _getLastId() {
+  #getLastId() {
     this.db.db.exec(`CREATE TABLE IF NOT EXISTS poller_state (key TEXT PRIMARY KEY, value TEXT)`);
-    const row = this.db.db.prepare('SELECT value FROM poller_state WHERE key = ?').get(this._stateKey());
+    const row = this.db.db.prepare('SELECT value FROM poller_state WHERE key = ?').get(this.#stateKey());
     return row ? Number(row.value) : 0;
   }
 
-  _setLastId(id) {
-    this.db.db.prepare('INSERT OR REPLACE INTO poller_state (key, value) VALUES (?, ?)').run(this._stateKey(), String(id));
+  #setLastId(id) {
+    this.db.db.prepare('INSERT OR REPLACE INTO poller_state (key, value) VALUES (?, ?)').run(this.#stateKey(), String(id));
   }
 
-  _inTopic(msg) {
+  #inTopic(msg) {
     if (!this.topicId) return true;
     const topId = msg.replyTo?.replyToTopId || null;
     return topId === this.topicId || msg.id === this.topicId;
   }
 
-  async _attachImageMedia(dbMsg, msg) {
+  async #attachImageMedia(dbMsg, msg) {
     const hasPhoto = Boolean(msg.photo);
     if (!hasPhoto) return dbMsg;
 
@@ -103,7 +103,7 @@ class TelegramUserIngestor {
     }
   }
 
-  _toDbMessage(msg) {
+  #toDbMessage(msg) {
     const chatId = String(msg.chatId || this.chatId);
     const fromId = msg.senderId ? String(msg.senderId) : 'unknown';
     const replyToMsgId = msg.replyTo?.replyToMsgId || null;
@@ -159,7 +159,7 @@ class TelegramUserIngestor {
 
   async syncOnce({ backfillLimit = 200, replayBuffer = 30 } = {}) {
     const entity = await this.client.getEntity(this.chatId);
-    const lastId = this._getLastId();
+    const lastId = this.#getLastId();
     let maxSeen = lastId;
     let ingested = 0;
 
@@ -177,17 +177,17 @@ class TelegramUserIngestor {
 
     for await (const msg of this.client.iterMessages(entity, iterOpts)) {
       if (!msg || !msg.id) continue;
-      if (!this._inTopic(msg)) continue;
+      if (!this.#inTopic(msg)) continue;
       if (lastId && msg.id <= (lastId - normalizedReplay)) continue; // safety guard
 
-      let dbMsg = this._toDbMessage(msg);
-      dbMsg = await this._attachImageMedia(dbMsg, msg);
+      let dbMsg = this.#toDbMessage(msg);
+      dbMsg = await this.#attachImageMedia(dbMsg, msg);
       this.db.insertMessage(dbMsg);
       ingested++;
       if (msg.id > maxSeen) maxSeen = msg.id;
     }
 
-    if (maxSeen > lastId) this._setLastId(maxSeen);
+    if (maxSeen > lastId) this.#setLastId(maxSeen);
     console.log(`[MTProto] sync complete. Ingested: ${ingested}, lastId: ${maxSeen}`);
     return { ingested, lastId: maxSeen };
   }

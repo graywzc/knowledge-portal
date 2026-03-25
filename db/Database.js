@@ -15,10 +15,10 @@ class Database {
   constructor(dbPath) {
     this.db = new BetterSqlite3(dbPath);
     this.db.pragma('journal_mode = WAL');
-    this._migrate();
+    this.#migrate();
   }
 
-  _migrate() {
+  #migrate() {
     const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
     this.db.exec(schema);
 
@@ -33,10 +33,10 @@ class Database {
     if (!cols.includes('media_height')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_height INTEGER`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_scope ON messages(source, chat_id, topic_id)`);
 
-    this._normalizeTelegramScopes();
+    this.#normalizeTelegramScopes();
   }
 
-  _normalizeTelegramScopes() {
+  #normalizeTelegramScopes() {
     // Backfill chat_id/topic_id for existing telegram rows and align channel with topic/chat scope.
     const rows = this.db.prepare(
       `SELECT id, channel, raw_meta FROM messages WHERE source='telegram' AND (chat_id IS NULL OR chat_id='' OR topic_id IS NULL)`

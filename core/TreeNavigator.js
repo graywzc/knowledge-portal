@@ -56,10 +56,10 @@ class TreeNavigator {
     this.rootLayerUuid = null;
 
     // Create root layer
-    this._createRootLayer();
+    this.#createRootLayer();
   }
 
-  _nextLayerLabel() {
+  #nextLayerLabel() {
     const idx = this.layerCounter++;
     let label = '';
     let n = idx;
@@ -70,15 +70,15 @@ class TreeNavigator {
     return label;
   }
 
-  _computeLayerUuidFromFirstMessage(firstMessageId) {
+  #computeLayerUuidFromFirstMessage(firstMessageId) {
     return uuidv5(String(firstMessageId));
   }
 
-  _createRootLayer() {
-    const id = this._computeLayerUuidFromFirstMessage(this.rootMessageId);
+  #createRootLayer() {
+    const id = this.#computeLayerUuidFromFirstMessage(this.rootMessageId);
     const layer = {
       id,
-      label: this._nextLayerLabel(),
+      label: this.#nextLayerLabel(),
       firstMessageId: this.rootMessageId,
       parentLayerUuid: null,
       branchFromMessageId: null,
@@ -91,11 +91,11 @@ class TreeNavigator {
     return layer;
   }
 
-  _createLayer(parentLayerUuid, branchFromMessageId, firstMessageId) {
-    const id = this._computeLayerUuidFromFirstMessage(firstMessageId);
+  #createLayer(parentLayerUuid, branchFromMessageId, firstMessageId) {
+    const id = this.#computeLayerUuidFromFirstMessage(firstMessageId);
     const layer = {
       id,
-      label: this._nextLayerLabel(),
+      label: this.#nextLayerLabel(),
       firstMessageId: String(firstMessageId),
       parentLayerUuid,
       branchFromMessageId,
@@ -131,7 +131,7 @@ class TreeNavigator {
         break;
       }
       case 'branch': {
-        const newLayer = this._createLayer(action.fromLayerUuid, msg.replyToId, msg.id);
+        const newLayer = this.#createLayer(action.fromLayerUuid, msg.replyToId, msg.id);
         targetLayerUuid = newLayer.id;
         this.currentLayerUuid = newLayer.id;
         break;
@@ -174,10 +174,10 @@ class TreeNavigator {
   getTree() {
     const root = this.layers.get(this.rootLayerUuid);
     if (!root) return null;
-    return this._buildSubtree(root);
+    return this.#buildSubtree(root);
   }
 
-  _buildSubtree(layer) {
+  #buildSubtree(layer) {
     return {
       id: layer.id,
       messageCount: layer.messages.length,
@@ -185,7 +185,7 @@ class TreeNavigator {
         const childLayer = this.layers.get(c.layerUuid);
         return {
           branchFromMessageId: c.branchFromMessageId,
-          ...this._buildSubtree(childLayer),
+          ...this.#buildSubtree(childLayer),
         };
       }),
     };
