@@ -99,7 +99,7 @@
     #image-preview img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #cfd6e6; }
     #image-preview button { border: 1px solid #a33; background: #fff; color: #a33; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
     #composer-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
-    #composer-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; min-height: 44px; max-height: 220px; resize: none; overflow-y: hidden; }
+    #composer-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; min-height: 44px; resize: none; overflow-y: hidden; }
     #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
     #composer-send:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -336,9 +336,9 @@
       const input = document.getElementById('composer-input');
       if (!input) return;
       input.style.height = 'auto';
-      const next = Math.min(input.scrollHeight, 220);
+      const next = input.scrollHeight;
       input.style.height = `${Math.max(next, 44)}px`;
-      input.style.overflowY = input.scrollHeight > 220 ? 'auto' : 'hidden';
+      input.style.overflowY = 'hidden';
     }
 
     function setReplyTarget(target) {
