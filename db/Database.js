@@ -218,9 +218,9 @@ class Database {
     if (byUUID?.topic_uuid) return String(byUUID.topic_uuid);
 
     this.db.prepare(
-      `INSERT OR IGNORE INTO topics(topic_uuid, source, external_container_id, external_topic_id, archived, deleted_at, created_at, updated_at)
-       VALUES(?, ?, ?, ?, 0, NULL, (unixepoch() * 1000), (unixepoch() * 1000))`
-    ).run(topicUUID, src, container, topic);
+      `INSERT OR IGNORE INTO topics(topic_uuid, source, archived, deleted_at, created_at, updated_at)
+       VALUES(?, ?, 0, NULL, (unixepoch() * 1000), (unixepoch() * 1000))`
+    ).run(topicUUID, src);
 
     return topicUUID;
   }
@@ -292,6 +292,7 @@ class Database {
 
       out.push({
         id: String(r.topic_id),
+        chatId: String(chatId),
         topicUUID,
         name: name.length > 60 ? name.slice(0, 60) + '…' : name,
         lastTimestamp: r.last_ts,
@@ -326,10 +327,8 @@ class Database {
   }
 
   getTopicByTelegramScope(chatId, topicId) {
-    return this.db.prepare(
-      `SELECT * FROM topics
-       WHERE source='telegram' AND external_container_id=? AND external_topic_id=?`
-    ).get(String(chatId), String(topicId)) || null;
+    const topicUUID = this.#buildTopicUUID('telegram', String(chatId), String(topicId));
+    return this.getTopicByUUID(topicUUID);
   }
 
   isTelegramTopicDeleted(chatId, topicId) {

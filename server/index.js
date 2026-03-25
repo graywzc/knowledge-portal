@@ -258,9 +258,13 @@ app.post('/api/topics/:topicUUID/delete', async (req, res) => {
     if (topic.source !== 'telegram') return res.status(400).json({ error: 'only telegram topic delete supported' });
     if (topic.deleted_at) return res.status(400).json({ error: 'topic already deleted' });
 
-    const chatId = String(topic.external_container_id);
-    const topicId = Number(topic.external_topic_id);
-    if (!Number.isFinite(topicId)) return res.status(400).json({ error: 'invalid topic id' });
+    const reqChatId = req.body?.chatId;
+    const reqTopicId = req.body?.topicId;
+
+    const chatId = String(reqChatId || process.env.TG_CHAT_ID || process.env.TELEGRAM_CHAT_ID || db.getPrimaryTelegramChatId() || '');
+    const topicId = Number(reqTopicId);
+    if (!chatId) return res.status(400).json({ error: 'chatId required' });
+    if (!Number.isFinite(topicId)) return res.status(400).json({ error: 'topicId required' });
 
     await sender.deleteTopic({ chatId, topicId });
     db.setTopicDeletedAt(topicUUID, Date.now());

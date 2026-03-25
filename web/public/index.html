@@ -615,12 +615,12 @@
       await loadChannels('telegram');
     }
 
-    async function deleteTopicFromUI(topicUUID, topicId, topicName) {
+    async function deleteTopicFromUI(topicUUID, topicId, topicName, chatId) {
       if (currentSource !== 'telegram') return;
       const ok = window.confirm(`Delete topic "${topicName}" on Telegram? KP will keep history as read-only.`);
       if (!ok) return;
 
-      const result = await api('POST', `/topics/${encodeURIComponent(topicUUID)}/delete`, {});
+      const result = await api('POST', `/topics/${encodeURIComponent(topicUUID)}/delete`, { chatId, topicId });
       if (result?.error) {
         alert(`Delete topic failed: ${result.error}`);
         return;
@@ -695,6 +695,7 @@
             e.preventDefault();
             openTopicContextMenu(e.clientX, e.clientY, {
               id: t.id,
+              chatId: t.chatId || null,
               name: t.name || t.id,
               topicUUID: t.topicUUID || null,
               archived: !!t.archived,
@@ -1072,7 +1073,7 @@
 
     document.getElementById('ctx-delete-topic-btn').onclick = async () => {
       if (topicContextTarget?.topicUUID) {
-        await deleteTopicFromUI(topicContextTarget.topicUUID, topicContextTarget.id, topicContextTarget.name);
+        await deleteTopicFromUI(topicContextTarget.topicUUID, topicContextTarget.id, topicContextTarget.name, topicContextTarget.chatId);
       }
       closeTopicContextMenu();
     };

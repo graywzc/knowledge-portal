@@ -47,7 +47,7 @@ describe('POST /api/topics/:topicUUID/delete', () => {
   it('deletes topic on telegram and marks deleted_at while preserving history', async () => {
     await request(app)
       .post(`/api/topics/${encodeURIComponent(topicUUID)}/delete`)
-      .send({})
+      .send({ chatId: '-100', topicId: 55 })
       .expect(200);
 
     expect(mockSender.deleteTopic).toHaveBeenCalledWith({ chatId: '-100', topicId: 55 });
