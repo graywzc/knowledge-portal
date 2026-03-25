@@ -81,6 +81,9 @@ function buildTree(source, channel) {
     });
   }
 
+  const state = nav.exportState();
+  db.upsertLayers(source, channel, Object.values(state.layers));
+
   return nav;
 }
 
@@ -125,6 +128,39 @@ app.get('/api/sources/:source/channels/:channel/view', (req, res) => {
     currentLayerUuid: nav.getCurrentLayerUuid(),
     state: nav.exportState(),
   });
+});
+
+/** Get layer done statuses for a scope */
+app.get('/api/layers/status', (req, res) => {
+  const source = String(req.query.source || '');
+  const channel = String(req.query.channel || '');
+  if (!source || !channel) return res.status(400).json({ error: 'source and channel required' });
+
+  const rows = db.getLayerStatuses(source, channel);
+  const layers = {};
+  for (const r of rows) {
+    layers[String(r.layer_uuid)] = {
+      done: !!r.done,
+      updatedAt: Number(r.updated_at || 0),
+    };
+  }
+
+  res.json({ ok: true, source, channel, layers });
+});
+
+/** Toggle layer done */
+app.post('/api/layers/:layerUuid/done', (req, res) => {
+  const layerUuid = String(req.params.layerUuid || '');
+  const source = String(req.body?.source || '');
+  const channel = String(req.body?.channel || '');
+  const done = req.body?.done;
+
+  if (!layerUuid) return res.status(400).json({ error: 'layerUuid required' });
+  if (!source || !channel) return res.status(400).json({ error: 'source and channel required' });
+  if (typeof done !== 'boolean') return res.status(400).json({ error: 'done must be boolean' });
+
+  const out = db.setLayerDone(source, channel, layerUuid, done);
+  res.json(out);
 });
 
 /** Raw messages for a channel (for debugging) */

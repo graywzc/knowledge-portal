@@ -49,6 +49,8 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
       };
     }
     if (u.endsWith('/api/sources/telegram/channels/55/view')) return { json: async () => view };
+    if (u.includes('/api/layers/status?')) return { json: async () => ({ ok: true, layers: {} }) };
+    if (u.includes('/api/layers/') && u.endsWith('/done') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/telegram/send') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/telegram/send-image') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/telegram/topics/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };

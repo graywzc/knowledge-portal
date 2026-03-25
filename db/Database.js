@@ -263,6 +263,60 @@ class Database {
     return this.#hashString(payload);
   }
 
+  upsertLayers(source, channel, layers = []) {
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT INTO layers (layer_uuid, source, channel, first_message_id, parent_layer_uuid, done, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, COALESCE((SELECT done FROM layers WHERE layer_uuid = ?), 0), ?, ?)
+      ON CONFLICT(layer_uuid) DO UPDATE SET
+        source = excluded.source,
+        channel = excluded.channel,
+        first_message_id = COALESCE(excluded.first_message_id, layers.first_message_id),
+        parent_layer_uuid = excluded.parent_layer_uuid,
+        updated_at = excluded.updated_at
+    `);
+
+    const tx = this.db.transaction((items) => {
+      for (const l of items) {
+        if (!l?.id) continue;
+        stmt.run(
+          String(l.id),
+          String(source),
+          String(channel),
+          l.firstMessageId ? String(l.firstMessageId) : null,
+          l.parentLayerUuid ? String(l.parentLayerUuid) : null,
+          String(l.id),
+          now,
+          now,
+        );
+      }
+    });
+    tx(layers);
+  }
+
+  getLayerStatuses(source, channel) {
+    return this.db.prepare(
+      `SELECT layer_uuid, done, updated_at
+       FROM layers
+       WHERE source=? AND channel=?`
+    ).all(String(source), String(channel));
+  }
+
+  setLayerDone(source, channel, layerUuid, done) {
+    const now = Date.now();
+    this.db.prepare(
+      `INSERT INTO layers (layer_uuid, source, channel, done, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(layer_uuid) DO UPDATE SET
+         done=excluded.done,
+         source=excluded.source,
+         channel=excluded.channel,
+         updated_at=excluded.updated_at`
+    ).run(String(layerUuid), String(source), String(channel), done ? 1 : 0, now, now);
+
+    return { ok: true, layerUuid: String(layerUuid), done: !!done, updatedAt: now };
+  }
+
   close() {
     this.db.close();
   }

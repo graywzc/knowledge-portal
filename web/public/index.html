@@ -35,6 +35,7 @@
     .tree-toggle { width: 16px; text-align: center; font-weight: 700; opacity: 0.9; cursor: pointer; user-select: none; }
     .tree-toggle.placeholder { visibility: hidden; }
     .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tree-label.layer-done { text-decoration: line-through; opacity: 0.72; }
     .tree-children { margin-left: 16px; border-left: 1px solid #333; }
 
     #pane-splitter { width: 6px; cursor: col-resize; background: transparent; position: relative; }
@@ -102,16 +103,16 @@
     #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
     #composer-send:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    #msg-context-menu, #topic-context-menu { position: fixed; display: none; z-index: 9999; min-width: 120px; background: #fff; border: 1px solid #d8deea; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.16); padding: 4px; }
-    #msg-context-menu button, #topic-context-menu button { width: 100%; border: none; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-    #msg-context-menu button:hover, #topic-context-menu button:hover { background: #edf2ff; }
+    #msg-context-menu, #topic-context-menu, #layer-context-menu { position: fixed; display: none; z-index: 9999; min-width: 120px; background: #fff; border: 1px solid #d8deea; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.16); padding: 4px; }
+    #msg-context-menu button, #topic-context-menu button, #layer-context-menu button { width: 100%; border: none; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    #msg-context-menu button:hover, #topic-context-menu button:hover, #layer-context-menu button:hover { background: #edf2ff; }
 
     body.dark #composer { background: #161a22; border-top-color: #2a2f3a; }
     body.dark #reply-banner { color: #d7e6ff; background: #243753; border-color: #345179; }
     body.dark #composer-input { background: #0f1115; color: #e8eaed; border-color: #2f3644; }
-    body.dark #msg-context-menu, body.dark #topic-context-menu { background: #1a1f29; border-color: #2f3644; }
-    body.dark #msg-context-menu button, body.dark #topic-context-menu button { color: #e8eaed; }
-    body.dark #msg-context-menu button:hover, body.dark #topic-context-menu button:hover { background: #2a3344; }
+    body.dark #msg-context-menu, body.dark #topic-context-menu, body.dark #layer-context-menu { background: #1a1f29; border-color: #2f3644; }
+    body.dark #msg-context-menu button, body.dark #topic-context-menu button, body.dark #layer-context-menu button { color: #e8eaed; }
+    body.dark #msg-context-menu button:hover, body.dark #topic-context-menu button:hover, body.dark #layer-context-menu button:hover { background: #2a3344; }
   </style>
 </head>
 <body>
@@ -157,6 +158,9 @@
   <div id="topic-context-menu">
     <button id="ctx-delete-topic-btn" type="button">Delete Topic</button>
   </div>
+  <div id="layer-context-menu">
+    <button id="ctx-toggle-layer-done-btn" type="button">Mark done</button>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
@@ -176,8 +180,10 @@
     let replyTarget = null;
     let contextTarget = null;
     let topicContextTarget = null;
+    let layerContextTarget = null;
     const pendingTopics = new Map();
     const layerWipState = new Map(); // key: `${topicId}:${layerUuid}` -> { topicId, layerUuid, startAt, untilAt }
+    const layerDoneState = new Map(); // key: layerUuid -> { done, updatedAt }
 
     const md = window.markdownit({
       html: false,
@@ -375,6 +381,58 @@
       const menu = document.getElementById('topic-context-menu');
       menu.style.display = 'none';
       topicContextTarget = null;
+    }
+
+    function openLayerContextMenu(x, y, layerInfo) {
+      layerContextTarget = layerInfo;
+      const btn = document.getElementById('ctx-toggle-layer-done-btn');
+      const done = !!layerDoneState.get(String(layerInfo.layerUuid))?.done;
+      btn.textContent = done ? 'Mark undone' : 'Mark done';
+
+      const menu = document.getElementById('layer-context-menu');
+      menu.style.display = 'block';
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+    }
+
+    function closeLayerContextMenu() {
+      const menu = document.getElementById('layer-context-menu');
+      menu.style.display = 'none';
+      layerContextTarget = null;
+    }
+
+    async function loadLayerStatuses() {
+      if (!currentSource || !currentChannel) return;
+      const out = await api('GET', `/layers/status?source=${encodeURIComponent(currentSource)}&channel=${encodeURIComponent(currentChannel)}`);
+      layerDoneState.clear();
+      const layers = out?.layers || {};
+      for (const [k, v] of Object.entries(layers)) {
+        layerDoneState.set(String(k), { done: !!v?.done, updatedAt: Number(v?.updatedAt || 0) });
+      }
+    }
+
+    function isLayerDone(layerUuid) {
+      return !!layerDoneState.get(String(layerUuid))?.done;
+    }
+
+    async function setLayerDone(layerUuid, done) {
+      const prev = layerDoneState.get(String(layerUuid)) || { done: false, updatedAt: 0 };
+      layerDoneState.set(String(layerUuid), { done: !!done, updatedAt: Date.now() });
+      if (viewState?.tree) renderTree(viewState.tree);
+      showLayer(currentLayerUuid);
+      try {
+        const out = await api('POST', `/layers/${encodeURIComponent(layerUuid)}/done`, {
+          source: currentSource,
+          channel: currentChannel,
+          done: !!done,
+        });
+        if (out?.error) throw new Error(out.error);
+      } catch (e) {
+        layerDoneState.set(String(layerUuid), prev);
+        if (viewState?.tree) renderTree(viewState.tree);
+        showLayer(currentLayerUuid);
+        alert('Failed to update layer done status.');
+      }
     }
 
     async function refreshCurrentView() {
@@ -641,6 +699,7 @@
 
     async function loadView(source, channel) {
       viewState = await api('GET', `/sources/${encodeURIComponent(source)}/channels/${encodeURIComponent(channel)}/view`);
+      await loadLayerStatuses();
       const saved = getSavedLayer(source, channel);
       const exists = saved && viewState?.state?.layers?.[saved];
       currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
@@ -695,13 +754,17 @@
       dots.innerHTML = '<i></i><i></i><i></i>';
 
       const label = document.createElement('span');
-      label.className = 'tree-label';
+      label.className = 'tree-label' + (isLayerDone(node.id) ? ' layer-done' : '');
       label.textContent = layerTitle(node.id);
 
       div.appendChild(toggle);
       div.appendChild(dots);
       div.appendChild(label);
       div.onclick = (e) => { e.stopPropagation(); showLayer(node.id); };
+      div.oncontextmenu = (e) => {
+        e.preventDefault();
+        openLayerContextMenu(e.clientX, e.clientY, { layerUuid: node.id });
+      };
       container.appendChild(div);
 
       if (hasChildren && isExpanded) {
@@ -728,10 +791,13 @@
 
       const header = document.getElementById('layer-header');
       const title = layerTitle(layerUuid);
+      const titleHtml = isLayerDone(layerUuid)
+        ? `<span class="tree-label layer-done">${escapeHtml(title)}</span>`
+        : escapeHtml(title);
       if (layer.parentLayerUuid && layer.branchFromMessageId) {
-        header.innerHTML = `${escapeHtml(title)} <a class="back-link" onclick="showLayer('${layer.parentLayerUuid}', '${layer.branchFromMessageId}')">↩ back to parent msg #${escapeHtml(getShortChatId(layer.branchFromMessageId))}</a>`;
+        header.innerHTML = `${titleHtml} <a class="back-link" onclick="showLayer('${layer.parentLayerUuid}', '${layer.branchFromMessageId}')">↩ back to parent msg #${escapeHtml(getShortChatId(layer.branchFromMessageId))}</a>`;
       } else {
-        header.textContent = title;
+        header.innerHTML = titleHtml;
       }
 
       const msgDiv = document.getElementById('messages');
@@ -946,9 +1012,19 @@
       closeTopicContextMenu();
     };
 
+    document.getElementById('ctx-toggle-layer-done-btn').onclick = async () => {
+      if (layerContextTarget?.layerUuid) {
+        const id = String(layerContextTarget.layerUuid);
+        const done = isLayerDone(id);
+        await setLayerDone(id, !done);
+      }
+      closeLayerContextMenu();
+    };
+
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#msg-context-menu')) closeContextMenu();
       if (!e.target.closest('#topic-context-menu')) closeTopicContextMenu();
+      if (!e.target.closest('#layer-context-menu')) closeLayerContextMenu();
     });
 
     document.getElementById('source-select').onchange = async (e) => {
