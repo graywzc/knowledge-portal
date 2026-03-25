@@ -63,7 +63,7 @@ describe('POST /api/topics/:topicUUID/delete', () => {
 
   it('returns 404 for unknown topic uuid', async () => {
     await request(app)
-      .post('/api/topics/topic:telegram:-100:999/delete')
+      .post('/api/topics/00000000-0000-5000-8000-000000000999/delete')
       .send({})
       .expect(404)
       .expect({ error: 'topic not found' });

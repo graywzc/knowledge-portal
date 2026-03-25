@@ -1,6 +1,29 @@
 const BetterSqlite3 = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+
+const TOPIC_UUID_NAMESPACE = '0a0c7bd1-9a5e-4f13-b0bd-67a7847f3a22';
+
+function uuidToBytes(uuid) {
+  const hex = String(uuid).replace(/-/g, '');
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) throw new Error('invalid topic UUID namespace');
+  return Buffer.from(hex, 'hex');
+}
+
+function bytesToUuid(buf) {
+  const h = buf.toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+function uuidv5(name, namespace = TOPIC_UUID_NAMESPACE) {
+  const ns = uuidToBytes(namespace);
+  const hash = crypto.createHash('sha1').update(Buffer.concat([ns, Buffer.from(String(name), 'utf8')])).digest();
+  const out = Buffer.from(hash.subarray(0, 16));
+  out[6] = (out[6] & 0x0f) | 0x50;
+  out[8] = (out[8] & 0x3f) | 0x80;
+  return bytesToUuid(out);
+}
 
 class Database {
   #hashString(s) {
@@ -50,7 +73,11 @@ class Database {
   }
 
   #buildTopicUUID(source, externalContainerId, externalTopicId) {
-    return `topic:${source}:${externalContainerId}:${externalTopicId}`;
+    const src = String(source || '').trim().toLowerCase();
+    const container = String(externalContainerId || '').trim();
+    const topic = String(externalTopicId || '').trim();
+    const canonicalInput = `${src}|container=${container}|topic=${topic}`;
+    return uuidv5(canonicalInput);
   }
 
   #normalizeTelegramScopes() {
@@ -186,11 +213,8 @@ class Database {
     const container = String(externalContainerId);
     const topic = String(externalTopicId);
 
-    // Canonical path: generate source-adapted topic UUID first, then query by topic_uuid.
     const topicUUID = this.#buildTopicUUID(src, container, topic);
-    const byUUID = this.db.prepare(
-      `SELECT topic_uuid FROM topics WHERE topic_uuid=?`
-    ).get(topicUUID);
+    const byUUID = this.db.prepare(`SELECT topic_uuid FROM topics WHERE topic_uuid=?`).get(topicUUID);
     if (byUUID?.topic_uuid) return String(byUUID.topic_uuid);
 
     this.db.prepare(

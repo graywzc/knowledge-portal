@@ -162,7 +162,7 @@
     <button id="ctx-reply-btn" type="button">Reply</button>
   </div>
   <div id="topic-context-menu">
-    <button id="ctx-hide-topic-btn" type="button">Hide Topic</button>
+    <button id="ctx-hide-topic-btn" type="button">Archive Topic</button>
     <button id="ctx-delete-topic-btn" type="button">Delete Topic</button>
   </div>
   <div id="layer-context-menu">
@@ -393,7 +393,7 @@
       const menu = document.getElementById('topic-context-menu');
       const hideBtn = document.getElementById('ctx-hide-topic-btn');
       const delBtn = document.getElementById('ctx-delete-topic-btn');
-      hideBtn.textContent = topicInfo?.archived ? 'Unhide Topic' : 'Hide Topic';
+      hideBtn.textContent = topicInfo?.archived ? 'Unarchive Topic' : 'Archive Topic';
       delBtn.style.display = topicInfo?.deletedAt ? 'none' : 'block';
       menu.style.display = 'block';
       menu.style.left = `${x}px`;
@@ -602,7 +602,7 @@
       if (!topicUUID) return;
       const result = await api('POST', `/topics/${encodeURIComponent(topicUUID)}/archive`, { archived: !!archived });
       if (result?.error) {
-        alert(`${archived ? 'Hide' : 'Unhide'} topic failed: ${result.error}`);
+        alert(`${archived ? 'Archive' : 'Unarchive'} topic failed: ${result.error}`);
         return;
       }
       if (archived && topicContextTarget && String(currentChannel) === String(topicContextTarget.id)) {

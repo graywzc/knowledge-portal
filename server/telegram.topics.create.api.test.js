@@ -46,7 +46,7 @@ describe('POST /api/telegram/topics/create', () => {
     });
     expect(res.body.ok).toBe(true);
     expect(res.body.topicId).toBe(3001);
-    expect(res.body.topicUUID).toBe('topic:telegram:-1003826585913:3001');
+    expect(res.body.topicUUID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
   it('validates title', async () => {
