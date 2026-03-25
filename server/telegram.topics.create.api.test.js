@@ -46,6 +46,7 @@ describe('POST /api/telegram/topics/create', () => {
     });
     expect(res.body.ok).toBe(true);
     expect(res.body.topicId).toBe(3001);
+    expect(res.body.topicUUID).toBe('topic:telegram:-1003826585913:3001');
   });
 
   it('validates title', async () => {

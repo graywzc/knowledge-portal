@@ -40,3 +40,18 @@ CREATE TABLE IF NOT EXISTS layers (
 
 CREATE INDEX IF NOT EXISTS idx_layers_scope ON layers(source, channel);
 CREATE INDEX IF NOT EXISTS idx_layers_parent ON layers(parent_layer_uuid);
+
+-- Topic lifecycle metadata (source-agnostic identity + local visibility/deletion state)
+CREATE TABLE IF NOT EXISTS topics (
+  topic_uuid             TEXT PRIMARY KEY,
+  source                 TEXT NOT NULL,
+  external_container_id  TEXT NOT NULL,
+  external_topic_id      TEXT NOT NULL,
+  archived               INTEGER NOT NULL DEFAULT 0,   -- 0: shown in sidebar, 1: hidden
+  deleted_at             INTEGER,                      -- epoch ms; null means not deleted on upstream
+  created_at             INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  updated_at             INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  UNIQUE(source, external_container_id, external_topic_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_topics_source_container ON topics(source, external_container_id);

@@ -33,7 +33,24 @@ class Database {
     if (!cols.includes('media_height')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_height INTEGER`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_scope ON messages(source, chat_id, topic_id)`);
 
+    const topicCols = this.db.prepare(`PRAGMA table_info(topics)`).all().map(c => c.name);
+    if (!topicCols.includes('archived')) this.db.exec(`ALTER TABLE topics ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
+    if (!topicCols.includes('deleted_at')) this.db.exec(`ALTER TABLE topics ADD COLUMN deleted_at INTEGER`);
+    if (!topicCols.includes('created_at')) this.db.exec(`ALTER TABLE topics ADD COLUMN created_at INTEGER`);
+    if (!topicCols.includes('updated_at')) this.db.exec(`ALTER TABLE topics ADD COLUMN updated_at INTEGER`);
+
+    // Backfill nullable/additive topic lifecycle timestamps safely for older SQLite builds
+    // (ALTER TABLE ADD COLUMN only allows constant defaults).
+    this.db.exec(`UPDATE topics SET created_at = COALESCE(created_at, CAST(unixepoch() * 1000 AS INTEGER))`);
+    this.db.exec(`UPDATE topics SET updated_at = COALESCE(updated_at, CAST(unixepoch() * 1000 AS INTEGER))`);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_topics_archived_deleted ON topics(archived, deleted_at)`);
+
     this.#normalizeTelegramScopes();
+  }
+
+  #buildTopicUUID(source, externalContainerId, externalTopicId) {
+    return `topic:${source}:${externalContainerId}:${externalTopicId}`;
   }
 
   #normalizeTelegramScopes() {
@@ -164,10 +181,50 @@ class Database {
     ).all(source).map(r => r.scope);
   }
 
+  getOrCreateTopicUUID(source, externalContainerId, externalTopicId) {
+    const src = String(source);
+    const container = String(externalContainerId);
+    const topic = String(externalTopicId);
+
+    // Canonical path: generate source-adapted topic UUID first, then query by topic_uuid.
+    const topicUUID = this.#buildTopicUUID(src, container, topic);
+    const byUUID = this.db.prepare(
+      `SELECT topic_uuid FROM topics WHERE topic_uuid=?`
+    ).get(topicUUID);
+    if (byUUID?.topic_uuid) return String(byUUID.topic_uuid);
+
+    this.db.prepare(
+      `INSERT OR IGNORE INTO topics(topic_uuid, source, external_container_id, external_topic_id, archived, deleted_at, created_at, updated_at)
+       VALUES(?, ?, ?, ?, 0, NULL, (unixepoch() * 1000), (unixepoch() * 1000))`
+    ).run(topicUUID, src, container, topic);
+
+    return topicUUID;
+  }
+
+  getTopicByUUID(topicUUID) {
+    return this.db.prepare(`SELECT * FROM topics WHERE topic_uuid=?`).get(String(topicUUID)) || null;
+  }
+
+  setTopicArchived(topicUUID, archived) {
+    return this.db.prepare(
+      `UPDATE topics
+       SET archived=?, updated_at=(unixepoch() * 1000)
+       WHERE topic_uuid=?`
+    ).run(archived ? 1 : 0, String(topicUUID));
+  }
+
+  setTopicDeletedAt(topicUUID, deletedAtMs) {
+    return this.db.prepare(
+      `UPDATE topics
+       SET deleted_at=?, updated_at=(unixepoch() * 1000)
+       WHERE topic_uuid=?`
+    ).run(deletedAtMs, String(topicUUID));
+  }
+
   /**
    * List telegram topics under one chat, ordered by most recent message desc.
    */
-  getTelegramTopics(chatId) {
+  getTelegramTopics(chatId, { includeArchived = false } = {}) {
     const rows = this.db.prepare(
       `SELECT topic_id, MAX(timestamp) AS last_ts, COUNT(*) AS msg_count
        FROM messages
@@ -187,10 +244,15 @@ class Database {
        ORDER BY timestamp ASC LIMIT 1`
     );
 
-    return rows.map(r => {
-      let name = null;
+    const out = [];
+    for (const r of rows) {
+      const topicUUID = this.getOrCreateTopicUUID('telegram', String(chatId), String(r.topic_id));
+      const topicRow = this.getTopicByUUID(topicUUID);
+      const archived = Number(topicRow?.archived || 0) === 1;
+      const deletedAt = topicRow?.deleted_at || null;
+      if (!includeArchived && archived) continue;
 
-      // 1) Prefer explicit title-like metadata if present.
+      let name = null;
       for (const rr of titleFromMetaStmt.all(String(chatId), String(r.topic_id))) {
         try {
           const meta = rr.raw_meta ? JSON.parse(rr.raw_meta) : {};
@@ -198,23 +260,24 @@ class Database {
           if (t && String(t).trim()) { name = String(t).trim(); break; }
         } catch {}
       }
-
-      // 2) Fallback: first textual message in the topic (often the seed prompt/title-ish message).
       if (!name) {
         const first = firstTextStmt.get(String(chatId), String(r.topic_id));
         name = first?.content?.trim() || null;
       }
-
-      // 3) Final fallback.
       if (!name || name === '[media]') name = `Topic ${r.topic_id}`;
 
-      return {
+      out.push({
         id: String(r.topic_id),
+        topicUUID,
         name: name.length > 60 ? name.slice(0, 60) + '…' : name,
         lastTimestamp: r.last_ts,
         messageCount: r.msg_count,
-      };
-    });
+        archived,
+        deletedAt,
+      });
+    }
+
+    return out;
   }
 
   /**
@@ -238,11 +301,16 @@ class Database {
     return row ? String(row.chat_id) : null;
   }
 
-  deleteTelegramTopic(chatId, topicId) {
+  getTopicByTelegramScope(chatId, topicId) {
     return this.db.prepare(
-      `DELETE FROM messages
-       WHERE source='telegram' AND chat_id=? AND topic_id=?`
-    ).run(String(chatId), String(topicId));
+      `SELECT * FROM topics
+       WHERE source='telegram' AND external_container_id=? AND external_topic_id=?`
+    ).get(String(chatId), String(topicId)) || null;
+  }
+
+  isTelegramTopicDeleted(chatId, topicId) {
+    const row = this.getTopicByTelegramScope(chatId, topicId);
+    return !!(row && row.deleted_at);
   }
 
   getChannelSignature(source, channel, limit = 80) {

@@ -43,9 +43,9 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
 
     if (u.endsWith('/api/sources')) return { json: async () => ['telegram'] };
     if (u.endsWith('/api/sources/telegram/channels')) return { json: async () => channels };
-    if (u.endsWith('/api/telegram/topics')) {
+    if (u.includes('/api/telegram/topics')) {
       return {
-        json: async () => [{ id: '55', name: '[V1] Tennis Social Media App', messageCount: 2 }],
+        json: async () => [{ id: '55', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }],
       };
     }
     if (u.endsWith('/api/sources/telegram/channels/55/view')) return { json: async () => view };
@@ -54,6 +54,8 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
     if (u.endsWith('/api/telegram/send') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/telegram/send-image') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/telegram/topics/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
+    if (u.includes('/api/topics/') && u.endsWith('/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
+    if (u.includes('/api/topics/') && u.endsWith('/archive') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
 
     throw new Error(`Unexpected fetch URL: ${u}`);
   });
@@ -455,7 +457,7 @@ describe('web component behavior (index.html)', () => {
     await flush();
 
     const deleteCalls = window.fetch.mock.calls.filter(([url, opts]) =>
-      String(url).includes('/api/telegram/topics/delete') && opts?.method === 'POST');
+      String(url).includes('/api/topics/') && String(url).includes('/delete') && opts?.method === 'POST');
     expect(deleteCalls.length).toBe(1);
   });
 });

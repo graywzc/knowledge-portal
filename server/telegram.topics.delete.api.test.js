@@ -5,11 +5,12 @@ const request = require('supertest');
 const { Database } = require('../db/Database');
 const { createApp } = require('./index');
 
-describe('POST /api/telegram/topics/delete', () => {
+describe('POST /api/topics/:topicUUID/delete', () => {
   let dir;
   let dbPath;
   let mockSender;
   let app;
+  let topicUUID;
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kp-telegram-topic-delete-'));
@@ -27,10 +28,12 @@ describe('POST /api/telegram/topics/delete', () => {
       timestamp: 1,
       rawMeta: '{}',
     });
+    topicUUID = db.getOrCreateTopicUUID('telegram', '-100', '55');
     db.close();
 
     mockSender = {
       sendText: jest.fn(),
+      createTopic: jest.fn(),
       deleteTopic: jest.fn().mockResolvedValue({ ok: true, chatId: '-100', topicId: 55 }),
     };
 
@@ -41,26 +44,28 @@ describe('POST /api/telegram/topics/delete', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('deletes topic and removes topic messages from DB', async () => {
+  it('deletes topic on telegram and marks deleted_at while preserving history', async () => {
     await request(app)
-      .post('/api/telegram/topics/delete')
-      .send({ chatId: '-100', topicId: 55 })
-      .expect(200)
-      .expect({ ok: true, chatId: '-100', topicId: 55 });
+      .post(`/api/topics/${encodeURIComponent(topicUUID)}/delete`)
+      .send({})
+      .expect(200);
 
     expect(mockSender.deleteTopic).toHaveBeenCalledWith({ chatId: '-100', topicId: 55 });
 
     const db = new Database(dbPath);
-    const topics = db.getTelegramTopics('-100');
+    const topic = db.getTopicByUUID(topicUUID);
+    const msgs = db.getMessages('telegram', '55');
     db.close();
-    expect(topics.find((t) => String(t.id) === '55')).toBeUndefined();
+
+    expect(topic.deleted_at).not.toBeNull();
+    expect(msgs.length).toBeGreaterThan(0);
   });
 
-  it('validates topicId', async () => {
+  it('returns 404 for unknown topic uuid', async () => {
     await request(app)
-      .post('/api/telegram/topics/delete')
-      .send({ chatId: '-100', topicId: '' })
-      .expect(400)
-      .expect({ error: 'topicId required' });
+      .post('/api/topics/topic:telegram:-100:999/delete')
+      .send({})
+      .expect(404)
+      .expect({ error: 'topic not found' });
   });
 });
