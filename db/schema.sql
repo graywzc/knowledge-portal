@@ -26,3 +26,17 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(source, channel);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_to_id);
+
+CREATE TABLE IF NOT EXISTS layers (
+  layer_uuid        TEXT PRIMARY KEY,
+  source            TEXT NOT NULL,
+  channel           TEXT NOT NULL,
+  first_message_id  TEXT,
+  parent_layer_uuid TEXT,
+  done              INTEGER NOT NULL DEFAULT 0,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_layers_scope ON layers(source, channel);
+CREATE INDEX IF NOT EXISTS idx_layers_parent ON layers(parent_layer_uuid);
