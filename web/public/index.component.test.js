@@ -244,6 +244,61 @@ describe('web component behavior (index.html)', () => {
     expect(img.getAttribute('src')).toContain('/media/telegram/-100/55/1.jpg');
   });
 
+  it('opens lightbox when clicking an inline image', async () => {
+    await boot({ view: makeView({ withImage: true }) });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const img = document.querySelector('#messages .msg img.media-image');
+    img.click();
+    await flush();
+
+    const lightbox = document.getElementById('image-lightbox');
+    const lightboxImg = document.getElementById('image-lightbox-image');
+    expect(lightbox.classList.contains('open')).toBe(true);
+    expect(lightbox.getAttribute('aria-hidden')).toBe('false');
+    expect(lightboxImg.getAttribute('src')).toContain('/media/telegram/-100/55/1.jpg');
+  });
+
+  it('closes lightbox on Escape', async () => {
+    await boot({ view: makeView({ withImage: true }) });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const img = document.querySelector('#messages .msg img.media-image');
+    img.click();
+    await flush();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+
+    const lightbox = document.getElementById('image-lightbox');
+    const lightboxImg = document.getElementById('image-lightbox-image');
+    expect(lightbox.classList.contains('open')).toBe(false);
+    expect(lightbox.getAttribute('aria-hidden')).toBe('true');
+    expect(lightboxImg.getAttribute('src')).toBe(null);
+  });
+
   it('falls back to current layer when saved layer id is stale', async () => {
     localStorage.setItem('kp:lastLayer:telegram:55', 'Z');
     await boot({ view: makeView() });
