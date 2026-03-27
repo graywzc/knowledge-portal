@@ -1299,19 +1299,6 @@
       return !!el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]');
     }
 
-<<<<<<< HEAD
-    function scrollMessagesBy(delta) {
-      const msgDiv = document.getElementById('messages');
-      if (!msgDiv) return;
-      if (typeof msgDiv.scrollBy === 'function') {
-        msgDiv.scrollBy({ top: delta, behavior: 'smooth' });
-      } else {
-        msgDiv.scrollTop += delta;
-      }
-    }
-
-=======
->>>>>>> 2484fe7 (feat: add ctrl j/k layer navigation)
     function preprocessMessageForMarkdown(text) {
       const s = String(text || '');
       if (!s.trim() || s.includes('```')) return s;
