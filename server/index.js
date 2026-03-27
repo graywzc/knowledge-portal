@@ -347,6 +347,21 @@ app.post('/api/telegram/send', async (req, res) => {
   }
 });
 
+/** Search messages in backend storage (read-only) */
+app.post('/api/search/messages', (req, res) => {
+  try {
+    const { source, query, scope, limit, offset } = req.body || {};
+    const result = db.searchMessages({ source, query, scope, limit, offset });
+    return res.json(result);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (msg.includes('required')) {
+      return res.status(400).json({ error: msg });
+    }
+    return res.status(500).json({ error: 'message search failed', detail: msg });
+  }
+});
+
   return app;
 }
 

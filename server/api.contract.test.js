@@ -99,6 +99,58 @@ describe('API contract tests', () => {
     fs.rmSync(freshDir, { recursive: true, force: true });
   });
 
+  it('POST /api/search/messages returns read-only telegram search results', async () => {
+    const res = await request(app)
+      .post('/api/search/messages')
+      .send({
+        source: 'telegram',
+        query: 'world',
+        scope: { chatId: '-100', topicId: '55' },
+      })
+      .expect(200);
+
+    expect(res.body).toEqual({
+      source: 'telegram',
+      query: 'world',
+      total: 1,
+      limit: 50,
+      offset: 0,
+      results: [
+        {
+          locator: {
+            chatId: '-100',
+            topicId: '55',
+            messageId: '2',
+          },
+          snippet: 'world',
+          timestamp: 1700000001000,
+        },
+      ],
+    });
+  });
+
+  it('POST /api/search/messages returns 400 when required fields are missing', async () => {
+    const res = await request(app)
+      .post('/api/search/messages')
+      .send({ source: 'telegram', scope: { topicId: '55' } })
+      .expect(400);
+
+    expect(res.body).toEqual({ error: 'query required' });
+  });
+
+  it('POST /api/search/messages requires chatId and topicId for telegram', async () => {
+    const res = await request(app)
+      .post('/api/search/messages')
+      .send({
+        source: 'telegram',
+        query: 'world',
+        scope: { topicId: '55' },
+      })
+      .expect(400);
+
+    expect(res.body).toEqual({ error: 'scope.chatId required' });
+  });
+
   it('POST /api/ingest is removed', async () => {
     await request(app)
       .post('/api/ingest')
