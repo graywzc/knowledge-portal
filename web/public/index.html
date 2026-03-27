@@ -1114,6 +1114,23 @@
       return normalized || `Layer ${layerUuid}`;
     }
 
+    function getVisibleLayerIds() {
+      return Array.from(document.querySelectorAll('#tree .tree-node[data-layer-id]'))
+        .map((el) => String(el.getAttribute('data-layer-id') || ''))
+        .filter(Boolean);
+    }
+
+    function moveLayerSelection(delta) {
+      const visible = getVisibleLayerIds();
+      if (!visible.length) return;
+      const currentIndex = Math.max(0, visible.indexOf(String(currentLayerUuid)));
+      const nextIndex = Math.max(0, Math.min(visible.length - 1, currentIndex + delta));
+      const nextLayerId = visible[nextIndex];
+      if (nextLayerId && nextLayerId !== currentLayerUuid) {
+        showLayer(nextLayerId);
+      }
+    }
+
     function renderTree(node, container) {
       if (!container) {
         container = document.getElementById('tree');
@@ -1280,16 +1297,6 @@
       if (!el || typeof el.closest !== 'function') return false;
       if (el.isContentEditable) return true;
       return !!el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]');
-    }
-
-    function scrollMessagesBy(delta) {
-      const msgDiv = document.getElementById('messages');
-      if (!msgDiv) return;
-      if (typeof msgDiv.scrollBy === 'function') {
-        msgDiv.scrollBy({ top: delta, behavior: 'smooth' });
-      } else {
-        msgDiv.scrollTop += delta;
-      }
     }
 
     function preprocessMessageForMarkdown(text) {
@@ -1500,20 +1507,19 @@
         return;
       }
 
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && !isEditableTarget(e.target)) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !isEditableTarget(e.target)) {
         const key = String(e.key || '').toLowerCase();
         if (key === 'j') {
           e.preventDefault();
-          scrollMessagesBy(120);
+          moveLayerSelection(1);
           return;
         }
         if (key === 'k') {
           e.preventDefault();
-          scrollMessagesBy(-120);
+          moveLayerSelection(-1);
           return;
         }
       }
-
       if (e.key === 'Escape') {
         if (lightboxImageSrc) {
           closeImageLightbox();

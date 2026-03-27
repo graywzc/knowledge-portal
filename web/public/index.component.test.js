@@ -675,27 +675,22 @@ describe('web component behavior (index.html)', () => {
     expect(document.getElementById('new-messages-indicator').classList.contains('show')).toBe(true);
   });
 
-  it('supports j/k hotkeys for message pane scrolling and ignores composer typing', async () => {
-    await boot({ view: makeView() });
+  it('supports ctrl/cmd+j and ctrl/cmd+k to move visible layer selection', async () => {
+    await boot({ view: makeView({ withBranch: true }) });
 
     const topicRow = document.querySelector('#topic-list .tree-node');
     topicRow.click();
     await flush();
     await flush();
 
-    const messages = document.getElementById('messages');
-    messages.scrollBy = jest.fn();
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('A');
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
-    expect(messages.scrollBy).toHaveBeenCalledWith({ top: 120, behavior: 'smooth' });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('B');
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true, cancelable: true }));
-    expect(messages.scrollBy).toHaveBeenCalledWith({ top: -120, behavior: 'smooth' });
-
-    messages.scrollBy.mockClear();
-    const composer = document.getElementById('composer-input');
-    composer.focus();
-    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
-    expect(messages.scrollBy).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('A');
   });
 });
