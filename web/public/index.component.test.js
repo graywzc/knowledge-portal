@@ -37,7 +37,7 @@ function makeView({ empty = false, withBranch = false, withImage = false } = {})
   return { currentLayerUuid: 'A', tree, state: { layers } };
 }
 
-function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topic 55' }] } = {}) {
+function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topic 55' }], searchResults = [] } = {}) {
   return jest.fn(async (url, opts = {}) => {
     const u = String(url);
 
@@ -45,13 +45,14 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
     if (u.endsWith('/api/sources/telegram/channels')) return { json: async () => channels };
     if (u.includes('/api/telegram/topics')) {
       return {
-        json: async () => [{ id: '55', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }],
+        json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }],
       };
     }
     if (u.endsWith('/api/sources/telegram/channels/55/view')) return { json: async () => view };
     if (u.includes('/api/layers/status?')) return { json: async () => ({ ok: true, layers: {} }) };
     if (u.includes('/api/layers/') && u.endsWith('/done') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/telegram/send') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
+    if (u.endsWith('/api/search/messages') && opts.method === 'POST') return { json: async () => ({ source: 'telegram', query: 'root', total: searchResults.length, limit: 50, offset: 0, results: searchResults }) };
     if (u.endsWith('/api/telegram/send-image') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/telegram/topics/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.includes('/api/topics/') && u.endsWith('/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
@@ -432,17 +433,23 @@ describe('web component behavior (index.html)', () => {
     const input = document.getElementById('composer-input');
 
     input.value = 'line1';
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
+    const shiftEnter = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true });
+    input.dispatchEvent(shiftEnter);
     await flush();
+
+    expect(shiftEnter.defaultPrevented).toBe(false);
 
     const sendCallsAfterShiftEnter = window.fetch.mock.calls.filter(([url, opts]) =>
       String(url).includes('/api/telegram/send') && opts?.method === 'POST');
     expect(sendCallsAfterShiftEnter.length).toBe(0);
 
     input.value = 'send by enter';
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const plainEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(plainEnter);
     await flush();
     await flush();
+
+    expect(plainEnter.defaultPrevented).toBe(true);
 
     const sendCalls = window.fetch.mock.calls.filter(([url, opts]) =>
       String(url).includes('/api/telegram/send') && opts?.method === 'POST');
@@ -514,5 +521,67 @@ describe('web component behavior (index.html)', () => {
     const deleteCalls = window.fetch.mock.calls.filter(([url, opts]) =>
       String(url).includes('/api/topics/') && String(url).includes('/delete') && opts?.method === 'POST');
     expect(deleteCalls.length).toBe(1);
+  });
+
+  it('shows topic search results from backend and jumps on click', async () => {
+    const view = makeView({ withBranch: true });
+    await boot({
+      view,
+      searchResults: [
+        {
+          locator: { chatId: '-1003826585913', topicId: '55', messageId: '2' },
+          snippet: 'branch msg',
+          timestamp: 1700000001000,
+        },
+      ],
+    });
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    document.getElementById('topic-search-toggle').click();
+    await flush();
+
+    const input = document.getElementById('topic-search-input');
+    input.value = 'branch';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await flush();
+
+    const resultRow = document.querySelector('#topic-search-results .topic-search-result');
+    expect(resultRow).toBeTruthy();
+    expect(resultRow.textContent).toContain('branch msg');
+
+    resultRow.click();
+    await flush();
+
+    expect(document.getElementById('layer-header').textContent).toContain('branch msg');
+
+    const searchCall = window.fetch.mock.calls.find(([url, opts]) =>
+      String(url).includes('/api/search/messages') && opts?.method === 'POST');
+    expect(searchCall).toBeTruthy();
+    expect(JSON.parse(searchCall[1].body)).toEqual({
+      source: 'telegram',
+      query: 'branch',
+      scope: {
+        chatId: '-1003826585913',
+        topicId: '55',
+      },
+    });
+  });
+
+  it('opens topic search panel with command+f', async () => {
+    await boot({ view: makeView() });
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(true);
   });
 });
