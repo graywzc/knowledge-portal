@@ -678,18 +678,18 @@ describe('web component behavior (index.html)', () => {
     await flush();
 
     const messages = document.getElementById('messages');
-    const beforeJ = messages.scrollTop;
+    messages.scrollBy = jest.fn();
+
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
-    expect(messages.scrollTop).toBe(beforeJ + 120);
+    expect(messages.scrollBy).toHaveBeenCalledWith({ top: 120, behavior: 'smooth' });
 
-    const beforeK = messages.scrollTop;
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true, cancelable: true }));
-    expect(messages.scrollTop).toBe(beforeK - 120);
+    expect(messages.scrollBy).toHaveBeenCalledWith({ top: -120, behavior: 'smooth' });
 
-    const beforeComposerJ = messages.scrollTop;
+    messages.scrollBy.mockClear();
     const composer = document.getElementById('composer-input');
     composer.focus();
     composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
-    expect(messages.scrollTop).toBe(beforeComposerJ);
+    expect(messages.scrollBy).not.toHaveBeenCalled();
   });
 });
