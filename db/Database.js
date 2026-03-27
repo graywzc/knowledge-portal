@@ -56,6 +56,9 @@ class Database {
     if (!cols.includes('media_height')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_height INTEGER`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_scope ON messages(source, chat_id, topic_id)`);
 
+    const layerCols = this.db.prepare(`PRAGMA table_info(layers)`).all().map(c => c.name);
+    if (!layerCols.includes('title')) this.db.exec(`ALTER TABLE layers ADD COLUMN title TEXT`);
+
     const topicCols = this.db.prepare(`PRAGMA table_info(topics)`).all().map(c => c.name);
     if (!topicCols.includes('archived')) this.db.exec(`ALTER TABLE topics ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
     if (!topicCols.includes('deleted_at')) this.db.exec(`ALTER TABLE topics ADD COLUMN deleted_at INTEGER`);
@@ -387,10 +390,34 @@ class Database {
 
   getLayerStatuses(source, channel) {
     return this.db.prepare(
-      `SELECT layer_uuid, done, updated_at
+      `SELECT layer_uuid, title, done, updated_at
        FROM layers
        WHERE source=? AND channel=?`
     ).all(String(source), String(channel));
+  }
+
+  setLayerTitle(source, channel, layerUuid, title) {
+    const now = Date.now();
+    const normalizedTitle = String(title || '').trim();
+    this.db.prepare(
+      `INSERT INTO layers (layer_uuid, source, channel, title, done, created_at, updated_at)
+       VALUES (?, ?, ?, ?, COALESCE((SELECT done FROM layers WHERE layer_uuid = ?), 0), ?, ?)
+       ON CONFLICT(layer_uuid) DO UPDATE SET
+         title=excluded.title,
+         source=excluded.source,
+         channel=excluded.channel,
+         updated_at=excluded.updated_at`
+    ).run(
+      String(layerUuid),
+      String(source),
+      String(channel),
+      normalizedTitle || null,
+      String(layerUuid),
+      now,
+      now,
+    );
+
+    return { ok: true, layerUuid: String(layerUuid), title: normalizedTitle || null, updatedAt: now };
   }
 
   setLayerDone(source, channel, layerUuid, done) {

@@ -49,8 +49,9 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
       };
     }
     if (u.endsWith('/api/sources/telegram/channels/55/view')) return { json: async () => view };
-    if (u.includes('/api/layers/status?')) return { json: async () => ({ ok: true, layers: {} }) };
+    if (u.includes('/api/layers/status?')) return { json: async () => ({ ok: true, layers: { B: { title: 'Branch Layer', done: false, updatedAt: 1 } } }) };
     if (u.includes('/api/layers/') && u.endsWith('/done') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
+    if (u.includes('/api/layers/') && u.endsWith('/title') && opts.method === 'POST') return { json: async () => ({ ok: true, layerUuid: 'B', title: 'Renamed Branch', updatedAt: 2 }) };
     if (u.endsWith('/api/telegram/send') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.endsWith('/api/search/messages') && opts.method === 'POST') return { json: async () => ({ source: 'telegram', query: 'root', total: searchResults.length, limit: 50, offset: 0, results: searchResults }) };
     if (u.endsWith('/api/telegram/send-image') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
@@ -171,7 +172,8 @@ describe('web component behavior (index.html)', () => {
     badge.click();
     await flush();
 
-    expect(document.getElementById('layer-header').textContent).toContain('branch msg');
+    expect(document.getElementById('layer-header').textContent).toContain('Branch Layer');
+    expect(document.getElementById('messages').textContent).toContain('branch msg');
 
     const backLink = document.querySelector('#layer-header .back-link');
     expect(backLink).toBeTruthy();
@@ -196,15 +198,15 @@ describe('web component behavior (index.html)', () => {
     await flush();
     await flush();
 
-    const layerNodes = Array.from(document.querySelectorAll('#tree .tree-node'));
-    const bNode = layerNodes.find((n) => n.textContent.includes('branch msg'));
+    const bNode = document.querySelector('#tree .tree-node[data-layer-id="B"]');
     expect(bNode).toBeTruthy();
 
     bNode.click();
     await flush();
 
-    expect(document.getElementById('layer-header').textContent).toContain('branch msg');
-    expect(document.querySelector('#tree .tree-node.active').textContent).toContain('branch msg');
+    expect(document.getElementById('layer-header').textContent).toContain('Branch Layer');
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('B');
+    expect(document.getElementById('messages').textContent).toContain('branch msg');
   });
 
   it('shows empty state when selected layer has no messages', async () => {
@@ -336,8 +338,9 @@ describe('web component behavior (index.html)', () => {
     await flush();
     await flush();
 
-    expect(document.getElementById('layer-header').textContent).toContain('branch msg');
-    expect(document.querySelector('#tree .tree-node.active').textContent).toContain('branch msg');
+    expect(document.getElementById('layer-header').textContent).toContain('Branch Layer');
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('B');
+    expect(document.getElementById('messages').textContent).toContain('branch msg');
   });
 
   it('anchors non-reply send to selected layer self message instead of topic root', async () => {
@@ -493,17 +496,17 @@ describe('web component behavior (index.html)', () => {
     await flush();
     await flush();
 
-    const bToggle = Array.from(document.querySelectorAll('#tree .tree-node')).find((n) => n.textContent.includes('b')).querySelector('.tree-toggle');
+    const bNode = document.querySelector('#tree .tree-node[data-layer-id="B"]');
+    const bToggle = bNode.querySelector('.tree-toggle');
     bToggle.click();
     await flush();
 
-    let layerNodes = Array.from(document.querySelectorAll('#tree .tree-node'));
-    const cNode = layerNodes.find((n) => n.textContent.includes('c'));
+    const cNode = document.querySelector('#tree .tree-node[data-layer-id="C"]');
     cNode.click();
     await flush();
 
-    layerNodes = Array.from(document.querySelectorAll('#tree .tree-node')).map((n) => n.textContent);
-    expect(layerNodes.some((t) => t.includes('d'))).toBe(true);
+    const layerNodeIds = Array.from(document.querySelectorAll('#tree .tree-node')).map((n) => n.getAttribute('data-layer-id'));
+    expect(layerNodeIds).toContain('D');
   });
 
   it('calls topic delete endpoint from topic right-click menu', async () => {
@@ -583,5 +586,43 @@ describe('web component behavior (index.html)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
     await flush();
     expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(true);
+  });
+
+  it('shows custom layer title from metadata and edits it from layer context menu', async () => {
+    jest.spyOn(window, 'prompt').mockReturnValue('Renamed Branch');
+    await boot({ view: makeView({ withBranch: true }) });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    expect(document.querySelector('#tree').textContent).toContain('Branch Layer');
+
+    const branchNode = Array.from(document.querySelectorAll('#tree .tree-node')).find((n) => n.textContent.includes('Branch Layer'));
+    branchNode.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+    await flush();
+
+    document.getElementById('ctx-edit-layer-title-btn').click();
+    await flush();
+    await flush();
+
+    const titleCalls = window.fetch.mock.calls.filter(([url, opts]) =>
+      String(url).includes('/api/layers/B/title') && opts?.method === 'POST');
+    expect(titleCalls.length).toBe(1);
+    expect(JSON.parse(titleCalls[0][1].body)).toEqual({
+      source: 'telegram',
+      channel: '55',
+      title: 'Renamed Branch',
+    });
+
+    expect(document.querySelector('#tree').textContent).toContain('Renamed Branch');
   });
 });

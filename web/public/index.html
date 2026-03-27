@@ -221,6 +221,7 @@
     <button id="ctx-delete-topic-btn" type="button">Delete Topic</button>
   </div>
   <div id="layer-context-menu">
+    <button id="ctx-edit-layer-title-btn" type="button">Edit title</button>
     <button id="ctx-toggle-layer-done-btn" type="button">Mark done</button>
   </div>
   <div id="image-lightbox" aria-hidden="true">
@@ -260,7 +261,7 @@
     let lightboxImageSrc = '';
     const pendingTopics = new Map();
     const layerWipState = new Map(); // key: `${topicId}:${layerUuid}` -> { topicId, layerUuid, startAt, untilAt }
-    const layerDoneState = new Map(); // key: layerUuid -> { done, updatedAt }
+    const layerDoneState = new Map(); // key: layerUuid -> { done, updatedAt, title }
 
     const md = window.markdownit({
       html: false,
@@ -639,12 +640,40 @@
       layerDoneState.clear();
       const layers = out?.layers || {};
       for (const [k, v] of Object.entries(layers)) {
-        layerDoneState.set(String(k), { done: !!v?.done, updatedAt: Number(v?.updatedAt || 0) });
+        layerDoneState.set(String(k), { title: v?.title || null, done: !!v?.done, updatedAt: Number(v?.updatedAt || 0) });
       }
+    }
+
+    function getCustomLayerTitle(layerUuid) {
+      return layerDoneState.get(String(layerUuid))?.title || null;
     }
 
     function isLayerDone(layerUuid) {
       return !!layerDoneState.get(String(layerUuid))?.done;
+    }
+
+    async function setLayerTitle(layerUuid, title) {
+      const prev = layerDoneState.get(String(layerUuid)) || { title: null, done: false, updatedAt: 0 };
+      const nextTitle = String(title || '').trim() || null;
+      layerDoneState.set(String(layerUuid), { ...prev, title: nextTitle, updatedAt: Date.now() });
+      if (viewState?.tree) renderTree(viewState.tree);
+      showLayer(currentLayerUuid);
+      try {
+        const out = await api('POST', `/layers/${encodeURIComponent(layerUuid)}/title`, {
+          source: currentSource,
+          channel: currentChannel,
+          title: String(title || ''),
+        });
+        if (out?.error) throw new Error(out.error);
+        layerDoneState.set(String(layerUuid), { ...prev, title: out?.title || null, done: prev.done, updatedAt: Number(out?.updatedAt || Date.now()) });
+        if (viewState?.tree) renderTree(viewState.tree);
+        showLayer(currentLayerUuid);
+      } catch (e) {
+        layerDoneState.set(String(layerUuid), prev);
+        if (viewState?.tree) renderTree(viewState.tree);
+        showLayer(currentLayerUuid);
+        alert('Failed to update layer title.');
+      }
     }
 
     async function setLayerDone(layerUuid, done) {
@@ -1005,6 +1034,8 @@
 
     function layerTitle(layerUuid) {
       if (layerUuid === viewState?.tree?.id && currentTopicName) return currentTopicName;
+      const custom = getCustomLayerTitle(layerUuid);
+      if (custom) return custom;
       const layer = viewState?.state?.layers?.[layerUuid];
       if (!layer || !layer.messages || layer.messages.length === 0) return `Layer ${layerUuid}`;
 
@@ -1317,6 +1348,18 @@
         await deleteTopicFromUI(topicContextTarget.topicUUID, topicContextTarget.id, topicContextTarget.name, topicContextTarget.chatId);
       }
       closeTopicContextMenu();
+    };
+
+    document.getElementById('ctx-edit-layer-title-btn').onclick = async () => {
+      if (layerContextTarget?.layerUuid) {
+        const id = String(layerContextTarget.layerUuid);
+        const current = layerTitle(id);
+        const next = window.prompt('Layer title', current);
+        if (next !== null) {
+          await setLayerTitle(id, next);
+        }
+      }
+      closeLayerContextMenu();
     };
 
     document.getElementById('ctx-toggle-layer-done-btn').onclick = async () => {

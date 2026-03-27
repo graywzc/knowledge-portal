@@ -99,6 +99,28 @@ describe('API contract tests', () => {
     fs.rmSync(freshDir, { recursive: true, force: true });
   });
 
+  it('GET /api/layers/status includes custom titles and POST /api/layers/:layerUuid/title updates them', async () => {
+    let res = await request(app)
+      .post('/api/layers/A/title')
+      .send({ source: 'telegram', channel: '55', title: 'Planning Layer' })
+      .expect(200);
+
+    expect(res.body).toEqual(expect.objectContaining({
+      ok: true,
+      layerUuid: 'A',
+      title: 'Planning Layer',
+    }));
+
+    res = await request(app)
+      .get('/api/layers/status?source=telegram&channel=55')
+      .expect(200);
+
+    expect(res.body.layers.A).toEqual(expect.objectContaining({
+      title: 'Planning Layer',
+      done: false,
+    }));
+  });
+
   it('POST /api/search/messages returns read-only telegram search results', async () => {
     const res = await request(app)
       .post('/api/search/messages')
