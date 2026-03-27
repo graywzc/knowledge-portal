@@ -1267,6 +1267,22 @@
       return idx >= 0 ? s.slice(idx + 1) : s;
     }
 
+    function isEditableTarget(el) {
+      if (!el || typeof el.closest !== 'function') return false;
+      if (el.isContentEditable) return true;
+      return !!el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]');
+    }
+
+    function scrollMessagesBy(delta) {
+      const msgDiv = document.getElementById('messages');
+      if (!msgDiv) return;
+      if (typeof msgDiv.scrollBy === 'function') {
+        msgDiv.scrollBy({ top: delta, behavior: 'smooth' });
+      } else {
+        msgDiv.scrollTop += delta;
+      }
+    }
+
     function preprocessMessageForMarkdown(text) {
       const s = String(text || '');
       if (!s.trim() || s.includes('```')) return s;
@@ -1474,6 +1490,21 @@
         }
         return;
       }
+
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !isEditableTarget(e.target)) {
+        const key = String(e.key || '').toLowerCase();
+        if (key === 'j') {
+          e.preventDefault();
+          scrollMessagesBy(120);
+          return;
+        }
+        if (key === 'k') {
+          e.preventDefault();
+          scrollMessagesBy(-120);
+          return;
+        }
+      }
+
       if (e.key === 'Escape') {
         if (lightboxImageSrc) {
           closeImageLightbox();
