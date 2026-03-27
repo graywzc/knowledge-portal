@@ -625,4 +625,47 @@ describe('web component behavior (index.html)', () => {
 
     expect(document.querySelector('#tree').textContent).toContain('Renamed Branch');
   });
+
+  it('preserves scroll and shows new messages indicator when current layer updates away from bottom', async () => {
+    const firstView = makeView();
+    const secondView = makeView();
+    secondView.state.layers.A.messages.push({ id: 'tg:-100:3', sender: 'other', content: 'new msg', timestamp: 1700000002000 });
+    secondView.tree.messageCount = secondView.state.layers.A.messages.length;
+
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ json: async () => ['telegram'] })
+      .mockResolvedValueOnce({ json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }] })
+      .mockResolvedValueOnce({ json: async () => firstView })
+      .mockResolvedValueOnce({ json: async () => ({ ok: true, layers: {} }) })
+      .mockResolvedValueOnce({ json: async () => secondView })
+      .mockResolvedValueOnce({ json: async () => ({ ok: true, layers: {} }) });
+
+    document.documentElement.innerHTML = html
+      .replace(/<script[^>]*src=[\s\S]*?<\/script>/g, '')
+      .replace(/<script>[\s\S]*?<\/script>/g, '');
+    window.markdownit = jest.fn(() => { const api = { disable: () => api, set: () => api, render: (s) => `<p>${String(s || '')}</p>` }; return api; });
+    window.DOMPurify = { sanitize: (s) => s };
+    window.fetch = fetchMock;
+    Element.prototype.scrollIntoView = jest.fn();
+    jest.spyOn(window, 'setInterval').mockImplementation(() => 1);
+    window.eval(inlineScript);
+    await flush();
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    const messages = document.getElementById('messages');
+    Object.defineProperty(messages, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(messages, 'clientHeight', { value: 200, configurable: true });
+    messages.scrollTop = 100;
+
+    await window.eval('refreshCurrentView()');
+    await flush();
+    await flush();
+
+    expect(messages.scrollTop).toBe(100);
+    expect(document.getElementById('new-messages-indicator').classList.contains('show')).toBe(true);
+  });
 });

@@ -130,6 +130,9 @@
     body.dark .msg .media-image { border-color: #2f3a52; background: #1a2435; }
     .msg .branch-badge { display: inline-block; background: #4a6cf7; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; cursor: pointer; }
 
+    #new-messages-indicator { position: fixed; right: 24px; bottom: 86px; z-index: 1200; display: none; border: 1px solid #4a6cf7; background: #4a6cf7; color: #fff; border-radius: 999px; padding: 10px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 24px rgba(42, 77, 173, 0.28); cursor: pointer; }
+    #new-messages-indicator.show { display: inline-flex; align-items: center; gap: 6px; }
+
     #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 16px; }
 
     #composer { border-top: 1px solid #ddd; background: #fff; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
@@ -224,6 +227,7 @@
     <button id="ctx-edit-layer-title-btn" type="button">Edit title</button>
     <button id="ctx-toggle-layer-done-btn" type="button">Mark done</button>
   </div>
+  <button id="new-messages-indicator" type="button">↓ New messages</button>
   <div id="image-lightbox" aria-hidden="true">
     <div id="image-lightbox-backdrop"></div>
     <div id="image-lightbox-content" role="dialog" aria-modal="true" aria-label="Image preview">
@@ -259,6 +263,8 @@
     let topicContextTarget = null;
     let layerContextTarget = null;
     let lightboxImageSrc = '';
+    let lastLayerSnapshots = new Map();
+    let pendingNewMessagesLayerUuid = null;
     const pendingTopics = new Map();
     const layerWipState = new Map(); // key: `${topicId}:${layerUuid}` -> { topicId, layerUuid, startAt, untilAt }
     const layerDoneState = new Map(); // key: layerUuid -> { done, updatedAt, title }
@@ -1018,7 +1024,42 @@
       if (rootId) expandedNodes.add(rootId);
     }
 
+    function getLayerSnapshot(state, layerUuid) {
+      const layer = state?.layers?.[layerUuid];
+      const messages = layer?.messages || [];
+      const last = messages.length ? messages[messages.length - 1] : null;
+      return {
+        messageCount: messages.length,
+        lastMessageId: last?.id || null,
+      };
+    }
+
+    function rememberLayerSnapshots(state) {
+      lastLayerSnapshots = new Map();
+      const layers = state?.layers || {};
+      for (const layerUuid of Object.keys(layers)) {
+        lastLayerSnapshots.set(String(layerUuid), getLayerSnapshot(state, layerUuid));
+      }
+    }
+
+    function isNearBottom(el, threshold = 48) {
+      if (!el) return true;
+      return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+    }
+
+    function setNewMessagesIndicatorVisible(visible) {
+      const btn = document.getElementById('new-messages-indicator');
+      if (!btn) return;
+      btn.classList.toggle('show', !!visible);
+    }
+
     async function loadView(source, channel) {
+      const msgDiv = document.getElementById('messages');
+      const prevLayerUuid = currentLayerUuid;
+      const prevScrollTop = msgDiv ? msgDiv.scrollTop : 0;
+      const wasNearBottom = isNearBottom(msgDiv);
+      const prevSnapshot = prevLayerUuid ? lastLayerSnapshots.get(String(prevLayerUuid)) : null;
+
       viewState = await api('GET', `/sources/${encodeURIComponent(source)}/channels/${encodeURIComponent(channel)}/view`);
       await loadLayerStatuses();
       const saved = getSavedLayer(source, channel);
@@ -1026,7 +1067,26 @@
       currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
       expandPathToLayer(currentLayerUuid);
       renderTree(viewState.tree);
-      showLayer(currentLayerUuid);
+
+      const currentSnapshot = currentLayerUuid ? getLayerSnapshot(viewState.state, currentLayerUuid) : null;
+      const currentLayerChanged = !!(
+        prevLayerUuid
+        && currentLayerUuid === prevLayerUuid
+        && prevSnapshot
+        && currentSnapshot
+        && (currentSnapshot.messageCount !== prevSnapshot.messageCount || currentSnapshot.lastMessageId !== prevSnapshot.lastMessageId)
+      );
+
+      let scrollMode = 'bottom';
+      if (prevLayerUuid && currentLayerUuid === prevLayerUuid) {
+        if (currentLayerChanged && wasNearBottom) scrollMode = 'bottom';
+        else scrollMode = 'preserve';
+      }
+
+      showLayer(currentLayerUuid, null, { scrollMode, previousScrollTop: prevScrollTop });
+      pendingNewMessagesLayerUuid = (currentLayerChanged && !wasNearBottom) ? currentLayerUuid : null;
+      setNewMessagesIndicatorVisible(!!pendingNewMessagesLayerUuid && currentLayerUuid === pendingNewMessagesLayerUuid);
+      rememberLayerSnapshots(viewState.state);
       updateComposerVisibility();
       reconcileLayerWipFromView(channel);
       cleanupLayerWip();
@@ -1103,7 +1163,7 @@
       return p ? `${appBasePath}/media/${encodeURI(p)}` : null;
     }
 
-    function showLayer(layerUuid, focusMessageId = null) {
+    function showLayer(layerUuid, focusMessageId = null, options = {}) {
       if (!viewState) return;
       currentLayerUuid = layerUuid;
       expandPathToLayer(layerUuid);
@@ -1179,6 +1239,7 @@
 
       // Re-render tree to update active highlight
       if (viewState.tree) renderTree(viewState.tree);
+      setNewMessagesIndicatorVisible(!!pendingNewMessagesLayerUuid && currentLayerUuid === pendingNewMessagesLayerUuid);
 
       if (focusMessageId) {
         const target = msgDiv.querySelector(`[data-msg-id="${focusMessageId}"]`);
@@ -1189,7 +1250,12 @@
         }
       } else {
         requestAnimationFrame(() => {
-          msgDiv.scrollTop = msgDiv.scrollHeight;
+          const mode = options?.scrollMode || 'bottom';
+          if (mode === 'preserve') {
+            msgDiv.scrollTop = Number(options?.previousScrollTop || 0);
+          } else {
+            msgDiv.scrollTop = msgDiv.scrollHeight;
+          }
         });
       }
     }
@@ -1389,6 +1455,12 @@
 
     document.getElementById('image-lightbox-backdrop').addEventListener('click', closeImageLightbox);
     document.getElementById('image-lightbox-close').addEventListener('click', closeImageLightbox);
+    document.getElementById('new-messages-indicator').addEventListener('click', () => {
+      const msgDiv = document.getElementById('messages');
+      if (msgDiv) msgDiv.scrollTop = msgDiv.scrollHeight;
+      pendingNewMessagesLayerUuid = null;
+      setNewMessagesIndicatorVisible(false);
+    });
 
     document.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'f') {
