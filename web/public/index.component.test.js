@@ -668,4 +668,28 @@ describe('web component behavior (index.html)', () => {
     expect(messages.scrollTop).toBe(100);
     expect(document.getElementById('new-messages-indicator').classList.contains('show')).toBe(true);
   });
+
+  it('supports j/k hotkeys for message pane scrolling and ignores composer typing', async () => {
+    await boot({ view: makeView() });
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    const messages = document.getElementById('messages');
+    const beforeJ = messages.scrollTop;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+    expect(messages.scrollTop).toBe(beforeJ + 120);
+
+    const beforeK = messages.scrollTop;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true, cancelable: true }));
+    expect(messages.scrollTop).toBe(beforeK - 120);
+
+    const beforeComposerJ = messages.scrollTop;
+    const composer = document.getElementById('composer-input');
+    composer.focus();
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+    expect(messages.scrollTop).toBe(beforeComposerJ);
+  });
 });
