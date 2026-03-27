@@ -408,6 +408,92 @@ class Database {
     return { ok: true, layerUuid: String(layerUuid), done: !!done, updatedAt: now };
   }
 
+  searchMessages({ source, query, scope = {}, limit = 50, offset = 0 }) {
+    const normalizedSource = String(source || '').trim();
+    const normalizedQuery = String(query || '').trim();
+    const normalizedLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+    const normalizedOffset = Math.max(0, Number(offset) || 0);
+
+    if (!normalizedSource) throw new Error('source required');
+    if (!normalizedQuery) throw new Error('query required');
+
+    const channel = scope && scope.channel != null && scope.channel !== '' ? String(scope.channel) : null;
+    const topicId = scope && scope.topicId != null && scope.topicId !== '' ? String(scope.topicId) : null;
+    const chatId = scope && scope.chatId != null && scope.chatId !== '' ? String(scope.chatId) : null;
+
+    const where = ['source = ?', "content IS NOT NULL", "content != ''"];
+    const params = [normalizedSource];
+
+    if (normalizedSource === 'telegram') {
+      if (!chatId) throw new Error('scope.chatId required');
+      if (!topicId) throw new Error('scope.topicId required');
+      where.push('chat_id = ?');
+      params.push(chatId);
+      where.push('topic_id = ?');
+      params.push(topicId);
+    } else {
+      if (!channel) throw new Error('scope.channel required');
+      where.push('(channel = ? OR topic_id = ? OR chat_id = ?)');
+      params.push(channel, channel, channel);
+    }
+
+    const like = `%${normalizedQuery.replace(/[%_\\]/g, '\\$&')}%`;
+    where.push("LOWER(content) LIKE LOWER(?) ESCAPE '\\'");
+    params.push(like);
+
+    const countRow = this.db.prepare(
+      `SELECT COUNT(*) AS count FROM messages WHERE ${where.join(' AND ')}`
+    ).get(...params);
+
+    const rows = this.db.prepare(
+      `SELECT id, chat_id, topic_id, content, timestamp
+       FROM messages
+       WHERE ${where.join(' AND ')}
+       ORDER BY timestamp ASC, id ASC
+       LIMIT ? OFFSET ?`
+    ).all(...params, normalizedLimit, normalizedOffset);
+
+    return {
+      source: normalizedSource,
+      query: normalizedQuery,
+      total: Number(countRow?.count || 0),
+      limit: normalizedLimit,
+      offset: normalizedOffset,
+      results: rows.map((row) => ({
+        locator: {
+          chatId: row.chat_id,
+          topicId: row.topic_id,
+          messageId: this.#getSourceLocalMessageId(row.id),
+        },
+        snippet: this.#buildSearchSnippet(row.content, normalizedQuery),
+        timestamp: row.timestamp,
+      })),
+    };
+  }
+
+  #getSourceLocalMessageId(id) {
+    const s = String(id || '');
+    const idx = s.lastIndexOf(':');
+    return idx >= 0 ? s.slice(idx + 1) : s;
+  }
+
+  #buildSearchSnippet(content, query, radius = 40) {
+    const text = String(content || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const haystack = text.toLowerCase();
+    const needle = String(query || '').toLowerCase();
+    const matchIndex = haystack.indexOf(needle);
+    if (matchIndex < 0) {
+      return text.length <= (radius * 2) ? text : `${text.slice(0, radius * 2 - 1)}…`;
+    }
+
+    const start = Math.max(0, matchIndex - radius);
+    const end = Math.min(text.length, matchIndex + needle.length + radius);
+    const prefix = start > 0 ? '…' : '';
+    const suffix = end < text.length ? '…' : '';
+    return `${prefix}${text.slice(start, end)}${suffix}`;
+  }
+
   close() {
     this.db.close();
   }

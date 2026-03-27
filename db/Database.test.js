@@ -172,6 +172,58 @@ describe('Database', () => {
     assert.strictEqual(t56.name, 'Fallback topic title from first text');
   });
 
+  it('searches telegram messages by topic scope with stable locator payload', () => {
+    const db = createTestDb();
+
+    db.insertMessages([
+      {
+        id: 'tg:-100:1',
+        source: 'telegram',
+        chatId: '-100',
+        topicId: '55',
+        senderId: 'u1',
+        senderName: 'Alice',
+        content: 'Deploy plan for portal',
+        timestamp: 1000,
+      },
+      {
+        id: 'tg:-100:2',
+        source: 'telegram',
+        chatId: '-100',
+        topicId: '55',
+        senderId: 'u2',
+        senderName: 'Bob',
+        content: 'Need deploy rollback steps too',
+        timestamp: 2000,
+      },
+      {
+        id: 'tg:-100:3',
+        source: 'telegram',
+        chatId: '-100',
+        topicId: '56',
+        senderId: 'u3',
+        content: 'Different topic mention deploy but should not match topic 55 search',
+        timestamp: 3000,
+      },
+    ]);
+
+    const result = db.searchMessages({
+      source: 'telegram',
+      query: 'deploy',
+      scope: { chatId: '-100', topicId: '55' },
+    });
+
+    assert.strictEqual(result.source, 'telegram');
+    assert.strictEqual(result.query, 'deploy');
+    assert.strictEqual(result.total, 2);
+    assert.strictEqual(result.results.length, 2);
+    assert.deepEqual(result.results.map((r) => r.locator.messageId), ['1', '2']);
+    assert.strictEqual(result.results[0].locator.topicId, '55');
+    assert.strictEqual(result.results[0].locator.chatId, '-100');
+    assert.strictEqual(result.results[0].snippet, 'Deploy plan for portal');
+    assert.strictEqual(result.results[0].timestamp, 1000);
+  });
+
   it('normalizes legacy telegram scope rows, lists sources, and closes db', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-portal-db-legacy-'));
     const dbPath = path.join(dir, 'legacy.db');
