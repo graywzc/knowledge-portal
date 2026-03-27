@@ -46,7 +46,26 @@
     #pane-splitter:hover::after, body.resizing #pane-splitter::after { background: rgba(143,176,255,0.7); }
 
     #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    #layer-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; font-weight: 600; }
+    #layer-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; font-weight: 600; display: flex; flex-direction: column; gap: 10px; }
+    .layer-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+    .layer-header-title { min-width: 0; flex: 1; }
+    .layer-header-actions { display: flex; align-items: center; gap: 8px; }
+    .header-icon-btn { border: 1px solid #cfd6e6; background: #fff; color: #243b63; border-radius: 8px; padding: 6px 10px; font-size: 14px; cursor: pointer; }
+    .header-icon-btn:hover { background: #eef4ff; }
+    #topic-search-panel { display: none; flex-direction: column; gap: 8px; min-width: 0; }
+    #topic-search-panel.open { display: flex; }
+    .topic-search-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    #topic-search-input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #cfd6e6; border-radius: 8px; font-size: 13px; }
+    #topic-search-count { font-size: 12px; color: #6b7280; min-width: 40px; text-align: center; }
+    .topic-search-btn { border: 1px solid #cfd6e6; background: #fff; color: #243b63; border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+    .topic-search-btn:hover { background: #eef4ff; }
+    #topic-search-results { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+    .topic-search-result { border: 1px solid #d9e2f2; background: #fff; border-radius: 10px; padding: 8px 10px; cursor: pointer; text-align: left; }
+    .topic-search-result:hover { background: #f5f8ff; border-color: #c5d6ff; }
+    .topic-search-result.active { background: #e9f1ff; border-color: #8fb0ff; }
+    .topic-search-result-snippet { font-size: 13px; line-height: 1.35; color: #1f2937; }
+    .topic-search-result-meta { margin-top: 4px; font-size: 11px; color: #6b7280; }
+    .topic-search-empty { font-size: 12px; color: #6b7280; padding: 4px 2px; }
     #layer-header .back-link { display: inline-block; margin-left: 10px; font-weight: 500; font-size: 12px; color: #4a6cf7; cursor: pointer; text-decoration: none; }
     #layer-header .back-link:hover { text-decoration: underline; }
     #messages { flex: 1; overflow-y: auto; padding: 20px; min-width: 0; }
@@ -82,6 +101,18 @@
     .msg .chat-id { position: absolute; left: 10px; bottom: 6px; font-size: 11px; color: #7a7a7a; opacity: 0.9; }
 
     body.dark #layer-header { background: #161a22; border-bottom-color: #2a2f3a; color: #e8eaed; }
+    body.dark .header-icon-btn,
+    body.dark .topic-search-btn,
+    body.dark .topic-search-result { background: #1a1f29; color: #dbe7ff; border-color: #2f3644; }
+    body.dark .header-icon-btn:hover,
+    body.dark .topic-search-btn:hover,
+    body.dark .topic-search-result:hover { background: #243047; }
+    body.dark .topic-search-result.active { background: #2a3d5c; border-color: #8fb0ff; }
+    body.dark #topic-search-input { background: #0f1115; color: #e8eaed; border-color: #2f3644; }
+    body.dark #topic-search-count,
+    body.dark .topic-search-result-meta,
+    body.dark .topic-search-empty { color: #a0a7b4; }
+    body.dark .topic-search-result-snippet { color: #e8eaed; }
     body.dark #layer-header .back-link { color: #8fb0ff; }
     body.dark #messages { background: #0f1115; }
     body.dark .msg.self { background: #214a73; color: #e8eaed; }
@@ -149,7 +180,24 @@
   </div>
   <div id="pane-splitter" aria-label="Resize panes" role="separator"></div>
   <div id="main">
-    <div id="layer-header">Knowledge Portal</div>
+    <div id="layer-header">
+      <div class="layer-header-row">
+        <div id="layer-header-title" class="layer-header-title">Knowledge Portal</div>
+        <div class="layer-header-actions">
+          <button id="topic-search-toggle" class="header-icon-btn" type="button" aria-label="Search topic">🔍</button>
+        </div>
+      </div>
+      <div id="topic-search-panel">
+        <div class="topic-search-bar">
+          <input id="topic-search-input" type="text" placeholder="Search in topic" />
+          <span id="topic-search-count">0</span>
+          <button id="topic-search-prev" class="topic-search-btn" type="button">↑</button>
+          <button id="topic-search-next" class="topic-search-btn" type="button">↓</button>
+          <button id="topic-search-close" class="topic-search-btn" type="button">✕</button>
+        </div>
+        <div id="topic-search-results"></div>
+      </div>
+    </div>
     <div id="messages">
       <div id="empty-state">Select a source and channel to view messages</div>
     </div>
@@ -194,8 +242,13 @@
     let currentLayerUuid = '';
     let pendingImageDataUrl = null;
     let currentTopicDeletedAt = null;
+    let currentTopicChatId = null;
     let topicsViewMode = 'active'; // active | archived
     let viewState = null;
+    let topicSearchOpen = false;
+    let topicSearchQuery = '';
+    let topicSearchResults = [];
+    let topicSearchIndex = -1;
     let expandedNodes = new Set();
     let isSending = false;
     let realtimeStream = null;
@@ -278,6 +331,147 @@
       const composer = document.getElementById('composer');
       const enabled = (currentSource === 'telegram' && !!currentChannel && !currentTopicDeletedAt);
       composer.classList.toggle('hidden', !enabled);
+    }
+
+    function formatSearchTimestamp(ts) {
+      if (!ts) return '';
+      return formatMessageTime(ts);
+    }
+
+    function resetTopicSearch() {
+      topicSearchQuery = '';
+      topicSearchResults = [];
+      topicSearchIndex = -1;
+      const input = document.getElementById('topic-search-input');
+      if (input) input.value = '';
+      renderTopicSearchResults();
+      updateTopicSearchCount();
+    }
+
+    function syncTopicSearchInput() {
+      const input = document.getElementById('topic-search-input');
+      if (input) input.value = topicSearchQuery || '';
+    }
+
+    function updateTopicSearchCount() {
+      const count = document.getElementById('topic-search-count');
+      if (!count) return;
+      if (!topicSearchQuery) {
+        count.textContent = '0';
+        return;
+      }
+      count.textContent = topicSearchResults.length ? `${topicSearchIndex + 1}/${topicSearchResults.length}` : '0';
+    }
+
+    function renderTopicSearchResults() {
+      const container = document.getElementById('topic-search-results');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (!topicSearchQuery) return;
+
+      if (!topicSearchResults.length) {
+        const empty = document.createElement('div');
+        empty.className = 'topic-search-empty';
+        empty.textContent = 'No matches in this topic';
+        container.appendChild(empty);
+        return;
+      }
+
+      topicSearchResults.forEach((result, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'topic-search-result' + (index === topicSearchIndex ? ' active' : '');
+
+        const snippet = document.createElement('div');
+        snippet.className = 'topic-search-result-snippet';
+        snippet.textContent = result.snippet || '(no snippet)';
+
+        const meta = document.createElement('div');
+        meta.className = 'topic-search-result-meta';
+        meta.textContent = `#${result?.locator?.messageId || ''} · ${formatSearchTimestamp(result.timestamp)}`;
+
+        btn.appendChild(snippet);
+        btn.appendChild(meta);
+        btn.onclick = () => navigateTopicSearchResult(index);
+        container.appendChild(btn);
+      });
+    }
+
+    function setTopicSearchOpen(open) {
+      topicSearchOpen = !!open;
+      const panel = document.getElementById('topic-search-panel');
+      if (panel) panel.classList.toggle('open', topicSearchOpen);
+      if (topicSearchOpen) {
+        syncTopicSearchInput();
+        renderTopicSearchResults();
+        updateTopicSearchCount();
+      }
+    }
+
+    async function runTopicSearch(query, { navigate = true } = {}) {
+      topicSearchQuery = String(query || '').trim();
+      if (!topicSearchQuery) {
+        topicSearchResults = [];
+        topicSearchIndex = -1;
+        renderTopicSearchResults();
+        updateTopicSearchCount();
+        return;
+      }
+      if (currentSource !== 'telegram' || !currentChannel || !currentTopicChatId) {
+        topicSearchResults = [];
+        topicSearchIndex = -1;
+        renderTopicSearchResults();
+        updateTopicSearchCount();
+        return;
+      }
+
+      const result = await api('POST', '/search/messages', {
+        source: currentSource,
+        query: topicSearchQuery,
+        scope: {
+          chatId: currentTopicChatId,
+          topicId: currentChannel,
+        },
+      });
+
+      topicSearchResults = Array.isArray(result?.results) ? result.results : [];
+      topicSearchIndex = topicSearchResults.length ? 0 : -1;
+      renderTopicSearchResults();
+      updateTopicSearchCount();
+      if (navigate && topicSearchIndex >= 0) {
+        navigateTopicSearchResult(topicSearchIndex);
+      }
+    }
+
+    function findLayerUuidForMessageId(messageId) {
+      const target = String(messageId || '');
+      const layers = viewState?.state?.layers || {};
+      for (const [layerUuid, layer] of Object.entries(layers)) {
+        const found = (layer.messages || []).some((m) => String(getShortChatId(m.id)) === target || String(m.id) === target);
+        if (found) return layerUuid;
+      }
+      return null;
+    }
+
+    function navigateTopicSearchResult(index) {
+      const result = topicSearchResults[index];
+      if (!result) return;
+      topicSearchIndex = index;
+      renderTopicSearchResults();
+      updateTopicSearchCount();
+      const layerUuid = findLayerUuidForMessageId(result?.locator?.messageId);
+      const focusMessageId = result?.locator?.messageId ? `tg:${result.locator.chatId}:${result.locator.messageId}` : null;
+      if (layerUuid) {
+        showLayer(layerUuid, focusMessageId);
+      }
+    }
+
+    function moveTopicSearch(delta) {
+      if (!topicSearchResults.length) return;
+      const len = topicSearchResults.length;
+      const next = (topicSearchIndex + delta + len) % len;
+      navigateTopicSearchResult(next);
     }
 
     function setTopicsViewMode(mode) {
@@ -629,6 +823,7 @@
       if (result?.topicId) {
         currentChannel = String(result.topicId);
         currentTopicName = trimmed;
+        currentTopicChatId = result?.chatId ? String(result.chatId) : currentTopicChatId;
         currentTopicDeletedAt = null;
         updateComposerVisibility();
         await loadView(currentSource, currentChannel);
@@ -722,6 +917,7 @@
           row.onclick = async () => {
             currentChannel = t.id;
             currentTopicName = t.name || '';
+            currentTopicChatId = t.chatId ? String(t.chatId) : null;
             currentTopicDeletedAt = t.deletedAt || null;
             sel.value = t.id;
             updateComposerVisibility();
@@ -885,15 +1081,15 @@
       const layer = layers[layerUuid];
       if (!layer) return;
 
-      const header = document.getElementById('layer-header');
+      const headerTitle = document.getElementById('layer-header-title');
       const title = layerTitle(layerUuid);
       const titleHtml = isLayerDone(layerUuid)
         ? `<span class="tree-label layer-done">${escapeHtml(title)}</span>`
         : escapeHtml(title);
       if (layer.parentLayerUuid && layer.branchFromMessageId) {
-        header.innerHTML = `${titleHtml} <a class="back-link" onclick="showLayer('${layer.parentLayerUuid}', '${layer.branchFromMessageId}')">↩ back to parent msg #${escapeHtml(getShortChatId(layer.branchFromMessageId))}</a>`;
+        headerTitle.innerHTML = `${titleHtml} <a class="back-link" onclick="showLayer('${layer.parentLayerUuid}', '${layer.branchFromMessageId}')">↩ back to parent msg #${escapeHtml(getShortChatId(layer.branchFromMessageId))}</a>`;
       } else {
-        header.innerHTML = titleHtml;
+        headerTitle.innerHTML = titleHtml;
       }
 
       const msgDiv = document.getElementById('messages');
@@ -1152,8 +1348,26 @@
     document.getElementById('image-lightbox-close').addEventListener('click', closeImageLightbox);
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && lightboxImageSrc) {
-        closeImageLightbox();
+      if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'f') {
+        e.preventDefault();
+        const nextOpen = !topicSearchOpen;
+        setTopicSearchOpen(nextOpen);
+        if (nextOpen) {
+          const input = document.getElementById('topic-search-input');
+          input?.focus();
+          input?.select();
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (lightboxImageSrc) {
+          closeImageLightbox();
+          return;
+        }
+        if (topicSearchOpen) {
+          setTopicSearchOpen(false);
+          return;
+        }
       }
     });
 
@@ -1161,6 +1375,7 @@
       currentSource = e.target.value;
       currentChannel = '';
       currentTopicName = '';
+      currentTopicChatId = null;
       currentTopicDeletedAt = null;
       if (currentSource !== 'telegram') setTopicsViewMode('active');
       updateComposerVisibility();
@@ -1173,6 +1388,7 @@
       currentChannel = e.target.value;
       const opt = e.target.selectedOptions && e.target.selectedOptions[0];
       currentTopicName = opt ? opt.textContent : '';
+      currentTopicChatId = null;
       currentTopicDeletedAt = null;
       updateComposerVisibility();
       if (currentSource && currentChannel) {
@@ -1188,6 +1404,31 @@
         alert('Create topic failed. Please try again.');
       });
     };
+
+    document.getElementById('topic-search-toggle').onclick = () => {
+      setTopicSearchOpen(!topicSearchOpen);
+      if (topicSearchOpen) {
+        const input = document.getElementById('topic-search-input');
+        input?.focus();
+        input?.select();
+      }
+    };
+    document.getElementById('topic-search-close').onclick = () => setTopicSearchOpen(false);
+    document.getElementById('topic-search-prev').onclick = () => moveTopicSearch(-1);
+    document.getElementById('topic-search-next').onclick = () => moveTopicSearch(1);
+    document.getElementById('topic-search-input').addEventListener('input', (e) => {
+      runTopicSearch(e.target.value, { navigate: false }).catch(() => {});
+    });
+    document.getElementById('topic-search-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        moveTopicSearch(-1);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (topicSearchIndex < 0 && topicSearchResults.length) navigateTopicSearchResult(0);
+        else moveTopicSearch(1);
+      }
+    });
 
     document.getElementById('composer-send').onclick = sendCurrentMessage;
     document.getElementById('image-preview-remove').onclick = clearPendingImage;
