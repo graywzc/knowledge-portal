@@ -380,7 +380,7 @@ describe('web component behavior (index.html)', () => {
     expect(payload.text).toBe('hello from B');
   });
 
-  it('supports custom context-menu reply target and cancel', async () => {
+  it('supports custom context-menu reply target, focuses composer, and cancel', async () => {
     await boot({ view: makeView() });
 
     const sourceSelect = document.getElementById('source-select');
@@ -395,6 +395,11 @@ describe('web component behavior (index.html)', () => {
     await flush();
     await flush();
 
+    const input = document.getElementById('composer-input');
+    jest.spyOn(input, 'focus');
+    jest.spyOn(input, 'setSelectionRange');
+    input.value = 'draft';
+
     const msg = document.querySelector('#messages .msg');
     msg.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
     await flush();
@@ -403,8 +408,9 @@ describe('web component behavior (index.html)', () => {
     await flush();
 
     expect(document.getElementById('reply-banner').textContent).toContain('Replying to #1');
+    expect(input.focus).toHaveBeenCalled();
+    expect(input.setSelectionRange).toHaveBeenCalledWith(5, 5);
 
-    const input = document.getElementById('composer-input');
     input.value = 'reply by context menu';
     document.getElementById('composer-send').click();
     await flush();
