@@ -141,12 +141,28 @@ app.get('/api/layers/status', (req, res) => {
   const layers = {};
   for (const r of rows) {
     layers[String(r.layer_uuid)] = {
+      title: r.title || null,
       done: !!r.done,
       updatedAt: Number(r.updated_at || 0),
     };
   }
 
   res.json({ ok: true, source, channel, layers });
+});
+
+/** Set custom layer title */
+app.post('/api/layers/:layerUuid/title', (req, res) => {
+  const layerUuid = String(req.params.layerUuid || '');
+  const source = String(req.body?.source || '');
+  const channel = String(req.body?.channel || '');
+  const title = req.body?.title;
+
+  if (!layerUuid) return res.status(400).json({ error: 'layerUuid required' });
+  if (!source || !channel) return res.status(400).json({ error: 'source and channel required' });
+  if (typeof title !== 'string') return res.status(400).json({ error: 'title must be string' });
+
+  const out = db.setLayerTitle(source, channel, layerUuid, title);
+  res.json(out);
 });
 
 /** Toggle layer done */

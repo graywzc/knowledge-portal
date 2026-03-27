@@ -224,6 +224,26 @@ describe('Database', () => {
     assert.strictEqual(result.results[0].timestamp, 1000);
   });
 
+  it('stores and clears custom layer titles', () => {
+    const db = createTestDb();
+
+    const setResult = db.setLayerTitle('telegram', '55', 'layer-a', 'Planning Layer');
+    assert.strictEqual(setResult.ok, true);
+    assert.strictEqual(setResult.title, 'Planning Layer');
+
+    let rows = db.getLayerStatuses('telegram', '55');
+    assert.strictEqual(rows.length, 1);
+    assert.strictEqual(rows[0].layer_uuid, 'layer-a');
+    assert.strictEqual(rows[0].title, 'Planning Layer');
+
+    const clearResult = db.setLayerTitle('telegram', '55', 'layer-a', '   ');
+    assert.strictEqual(clearResult.ok, true);
+    assert.strictEqual(clearResult.title, null);
+
+    rows = db.getLayerStatuses('telegram', '55');
+    assert.strictEqual(rows[0].title, null);
+  });
+
   it('normalizes legacy telegram scope rows, lists sources, and closes db', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-portal-db-legacy-'));
     const dbPath = path.join(dir, 'legacy.db');
