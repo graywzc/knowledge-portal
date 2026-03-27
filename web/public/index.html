@@ -588,6 +588,15 @@
       banner.innerHTML = `Replying to #${escapeHtml(String(getShortChatId(replyTarget.id)))} · ${escapeHtml(String(replyTarget.preview || ''))}<span class="close" id="reply-cancel">×</span>`;
       const cancel = document.getElementById('reply-cancel');
       if (cancel) cancel.onclick = () => setReplyTarget(null);
+
+      const input = document.getElementById('composer-input');
+      if (input) {
+        input.focus();
+        const len = input.value.length;
+        if (typeof input.setSelectionRange === 'function') {
+          input.setSelectionRange(len, len);
+        }
+      }
     }
 
     function openContextMenu(x, y, msgInfo) {
