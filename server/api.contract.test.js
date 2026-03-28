@@ -173,6 +173,61 @@ describe('API contract tests', () => {
     expect(res.body).toEqual({ error: 'scope.chatId required' });
   });
 
+  it('POST /api/search/topics returns topic title results with timestamps', async () => {
+    const db = new Database(dbPath);
+    db.insertMessages([
+      {
+        id: 'tg:-100:11',
+        source: 'telegram',
+        channel: '88',
+        chatId: '-100',
+        topicId: '88',
+        senderId: 'u1',
+        content: 'seed topic',
+        timestamp: 1700000002000,
+        rawMeta: { topic_title: 'Knowledge Portal Search' },
+      },
+    ]);
+    db.getTelegramTopics('-100');
+    db.close();
+
+    const res = await request(app)
+      .post('/api/search/topics')
+      .send({
+        source: 'telegram',
+        query: 'portal',
+        scope: { chatId: '-100' },
+      })
+      .expect(200);
+
+    expect(res.body).toEqual(expect.objectContaining({
+      source: 'telegram',
+      query: 'portal',
+      total: expect.any(Number),
+      results: expect.arrayContaining([
+        expect.objectContaining({
+          locator: { topicUUID: expect.any(String) },
+          title: 'Knowledge Portal Search',
+          createdAt: expect.any(Number),
+          updatedAt: expect.any(Number),
+        }),
+      ]),
+    }));
+  });
+
+  it('POST /api/search/topics requires chatId for telegram', async () => {
+    const res = await request(app)
+      .post('/api/search/topics')
+      .send({
+        source: 'telegram',
+        query: 'portal',
+        scope: {},
+      })
+      .expect(400);
+
+    expect(res.body).toEqual({ error: 'scope.chatId required' });
+  });
+
   it('POST /api/ingest is removed', async () => {
     await request(app)
       .post('/api/ingest')

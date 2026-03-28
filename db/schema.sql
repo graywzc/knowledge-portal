@@ -46,6 +46,8 @@ CREATE INDEX IF NOT EXISTS idx_layers_parent ON layers(parent_layer_uuid);
 CREATE TABLE IF NOT EXISTS topics (
   topic_uuid             TEXT PRIMARY KEY,
   source                 TEXT NOT NULL,
+  name                   TEXT,
+  meta                   TEXT,
   archived               INTEGER NOT NULL DEFAULT 0,   -- 0: shown in sidebar, 1: hidden
   deleted_at             INTEGER,                      -- epoch ms; null means not deleted on upstream
   created_at             INTEGER NOT NULL DEFAULT (unixepoch() * 1000),

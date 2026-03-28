@@ -244,6 +244,59 @@ describe('Database', () => {
     assert.strictEqual(rows[0].title, null);
   });
 
+  it('searches telegram topics by title with createdAt and updatedAt fields', () => {
+    const db = createTestDb();
+
+    db.insertMessages([
+      {
+        id: 'tg:-100:1',
+        source: 'telegram',
+        chatId: '-100',
+        topicId: '55',
+        senderId: 'u1',
+        content: 'seed 55',
+        timestamp: 1000,
+        rawMeta: { topic_title: 'Knowledge Portal' },
+      },
+      {
+        id: 'tg:-100:2',
+        source: 'telegram',
+        chatId: '-100',
+        topicId: '56',
+        senderId: 'u2',
+        content: 'seed 56',
+        timestamp: 2000,
+        rawMeta: { topic_title: 'Portal Search UX' },
+      },
+      {
+        id: 'tg:-100:3',
+        source: 'telegram',
+        chatId: '-100',
+        topicId: '57',
+        senderId: 'u3',
+        content: 'seed 57',
+        timestamp: 3000,
+        rawMeta: { topic_title: 'Unrelated' },
+      },
+    ]);
+
+    db.getTelegramTopics('-100');
+
+    const result = db.searchTopics({
+      source: 'telegram',
+      query: 'portal',
+      scope: { chatId: '-100' },
+    });
+
+    assert.strictEqual(result.source, 'telegram');
+    assert.strictEqual(result.query, 'portal');
+    assert.strictEqual(result.total, 2);
+    assert.strictEqual(typeof result.results[0].locator.topicUUID, 'string');
+    assert.deepEqual(result.results.map((r) => r.title), ['Portal Search UX', 'Knowledge Portal']);
+    assert.strictEqual(typeof result.results[0].createdAt, 'number');
+    assert.strictEqual(typeof result.results[0].updatedAt, 'number');
+  });
+
   it('normalizes legacy telegram scope rows, lists sources, and closes db', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-portal-db-legacy-'));
     const dbPath = path.join(dir, 'legacy.db');

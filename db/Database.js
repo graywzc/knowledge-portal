@@ -60,6 +60,8 @@ class Database {
     if (!layerCols.includes('title')) this.db.exec(`ALTER TABLE layers ADD COLUMN title TEXT`);
 
     const topicCols = this.db.prepare(`PRAGMA table_info(topics)`).all().map(c => c.name);
+    if (!topicCols.includes('name')) this.db.exec(`ALTER TABLE topics ADD COLUMN name TEXT`);
+    if (!topicCols.includes('meta')) this.db.exec(`ALTER TABLE topics ADD COLUMN meta TEXT`);
     if (!topicCols.includes('archived')) this.db.exec(`ALTER TABLE topics ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
     if (!topicCols.includes('deleted_at')) this.db.exec(`ALTER TABLE topics ADD COLUMN deleted_at INTEGER`);
     if (!topicCols.includes('created_at')) this.db.exec(`ALTER TABLE topics ADD COLUMN created_at INTEGER`);
@@ -220,16 +222,21 @@ class Database {
     const byUUID = this.db.prepare(`SELECT topic_uuid FROM topics WHERE topic_uuid=?`).get(topicUUID);
     if (byUUID?.topic_uuid) return String(byUUID.topic_uuid);
 
+    const meta = JSON.stringify({ containerId: container, topicId: topic });
     this.db.prepare(
-      `INSERT OR IGNORE INTO topics(topic_uuid, source, archived, deleted_at, created_at, updated_at)
-       VALUES(?, ?, 0, NULL, (unixepoch() * 1000), (unixepoch() * 1000))`
-    ).run(topicUUID, src);
+      `INSERT OR IGNORE INTO topics(topic_uuid, source, name, meta, archived, deleted_at, created_at, updated_at)
+       VALUES(?, ?, NULL, ?, 0, NULL, (unixepoch() * 1000), (unixepoch() * 1000))`
+    ).run(topicUUID, src, meta);
 
     return topicUUID;
   }
 
   getTopicByUUID(topicUUID) {
-    return this.db.prepare(`SELECT * FROM topics WHERE topic_uuid=?`).get(String(topicUUID)) || null;
+    const row = this.db.prepare(`SELECT * FROM topics WHERE topic_uuid=?`).get(String(topicUUID)) || null;
+    if (!row) return null;
+    let meta = null;
+    try { meta = row.meta ? JSON.parse(row.meta) : null; } catch { meta = null; }
+    return { ...row, meta };
   }
 
   setTopicArchived(topicUUID, archived) {
@@ -246,6 +253,67 @@ class Database {
        SET deleted_at=?, updated_at=(unixepoch() * 1000)
        WHERE topic_uuid=?`
     ).run(deletedAtMs, String(topicUUID));
+  }
+
+  searchTopics({ source, query, scope = {}, limit = 50, offset = 0, sort = {} }) {
+    const normalizedSource = String(source || '').trim();
+    const normalizedQuery = String(query || '').trim();
+    const normalizedLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+    const normalizedOffset = Math.max(0, Number(offset) || 0);
+    const sortField = String(sort?.field || 'updatedAt');
+    const sortDirection = String(sort?.direction || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    if (!normalizedSource) throw new Error('source required');
+    if (!normalizedQuery) throw new Error('query required');
+
+    if (normalizedSource === 'telegram') {
+      const chatId = scope && scope.chatId != null && scope.chatId !== '' ? String(scope.chatId) : null;
+      const includeArchived = !!scope?.includeArchived;
+      if (!chatId) throw new Error('scope.chatId required');
+
+      const like = `%${normalizedQuery.replace(/[%_\\]/g, '\\$&')}%`;
+      const archivedWhere = includeArchived ? '' : 'AND archived = 0 AND deleted_at IS NULL';
+      const candidates = this.db.prepare(
+        `SELECT topic_uuid, source, name, meta, created_at, updated_at, archived, deleted_at
+         FROM topics
+         WHERE source = ?
+           ${archivedWhere}
+           AND name IS NOT NULL
+           AND LOWER(name) LIKE LOWER(?) ESCAPE '\\'`
+      ).all(normalizedSource, like);
+
+      const rows = candidates
+        .map((row) => {
+          let meta = null;
+          try { meta = row.meta ? JSON.parse(row.meta) : null; } catch { meta = null; }
+          return { ...row, meta };
+        })
+        .filter((row) => String(row.meta?.chatId || row.meta?.containerId || '') === chatId)
+        .sort((a, b) => {
+          const av = sortField === 'createdAt' ? Number(a.created_at || 0) : Number(a.updated_at || 0);
+          const bv = sortField === 'createdAt' ? Number(b.created_at || 0) : Number(b.updated_at || 0);
+          return sortDirection === 'ASC' ? av - bv : bv - av;
+        });
+
+      const paged = rows.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+      return {
+        source: normalizedSource,
+        query: normalizedQuery,
+        total: rows.length,
+        limit: normalizedLimit,
+        offset: normalizedOffset,
+        results: paged.map((row) => ({
+          locator: {
+            topicUUID: String(row.topic_uuid),
+          },
+          title: String(row.name || ''),
+          createdAt: row.created_at ? Number(row.created_at) : null,
+          updatedAt: row.updated_at ? Number(row.updated_at) : null,
+        })),
+      };
+    }
+
+    throw new Error(`unsupported source: ${normalizedSource}`);
   }
 
   /**
@@ -293,11 +361,23 @@ class Database {
       }
       if (!name || name === '[media]') name = `Topic ${r.topic_id}`;
 
+      const finalName = name.length > 60 ? name.slice(0, 60) + '…' : name;
+      this.db.prepare(
+        `UPDATE topics
+         SET name = ?, meta = ?, updated_at = COALESCE(updated_at, ?)
+         WHERE topic_uuid = ?`
+      ).run(
+        finalName,
+        JSON.stringify({ chatId: String(chatId), topicId: String(r.topic_id) }),
+        Number(r.last_ts || Date.now()),
+        topicUUID,
+      );
+
       out.push({
         id: String(r.topic_id),
         chatId: String(chatId),
         topicUUID,
-        name: name.length > 60 ? name.slice(0, 60) + '…' : name,
+        name: finalName,
         lastTimestamp: r.last_ts,
         messageCount: r.msg_count,
         archived,
