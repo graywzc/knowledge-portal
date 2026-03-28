@@ -107,6 +107,21 @@ app.get('/api/telegram/topics', (req, res) => {
   res.json(db.getTelegramTopics(chatId, { includeArchived }));
 });
 
+/** Search topics by title (read-only) */
+app.post('/api/search/topics', (req, res) => {
+  try {
+    const { source, query, scope, limit, offset, sort } = req.body || {};
+    const result = db.searchTopics({ source, query, scope, limit, offset, sort });
+    return res.json(result);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (msg.includes('required') || msg.includes('unsupported source')) {
+      return res.status(400).json({ error: msg });
+    }
+    return res.status(500).json({ error: 'topic search failed', detail: msg });
+  }
+});
+
 /** Get tree for a source+channel */
 app.get('/api/sources/:source/channels/:channel/tree', (req, res) => {
   const nav = buildTree(req.params.source, req.params.channel);
