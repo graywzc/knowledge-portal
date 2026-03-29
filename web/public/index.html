@@ -848,55 +848,71 @@
     }
 
     async function loadCurrentTopicView() {
-      if (currentTopicUUID) {
-        const msgDiv = document.getElementById('messages');
-        const prevLayerUuid = currentLayerUuid;
-        const prevScrollTop = msgDiv ? msgDiv.scrollTop : 0;
-        const wasNearBottom = isNearBottom(msgDiv);
-        const prevSnapshot = prevLayerUuid ? lastLayerSnapshots.get(String(prevLayerUuid)) : null;
-
-        const out = await api('GET', `/topics/${encodeURIComponent(currentTopicUUID)}/view`);
-        viewState = { tree: out.tree, currentLayerUuid: out.currentLayerUuid, state: out.state };
-        const topic = out.topic || {};
-        currentSource = topic.source || currentSource;
-        currentChannel = topic?.locator?.channel || currentChannel;
-        currentTopicChatId = topic?.locator?.chatId || currentTopicChatId;
-        currentTopicName = topic?.name || currentTopicName;
-        currentTopicDeletedAt = topic?.deletedAt || null;
-
-        await loadLayerStatuses();
-        const saved = getSavedLayer(currentSource, currentChannel);
-        const exists = saved && viewState?.state?.layers?.[saved];
-        currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
-        expandPathToLayer(currentLayerUuid);
-        renderTree(viewState.tree);
-
-        const currentSnapshot = currentLayerUuid ? getLayerSnapshot(viewState.state, currentLayerUuid) : null;
-        const currentLayerChanged = !!(
-          prevLayerUuid
-          && currentLayerUuid === prevLayerUuid
-          && prevSnapshot
-          && currentSnapshot
-          && (currentSnapshot.messageCount !== prevSnapshot.messageCount || currentSnapshot.lastMessageId !== prevSnapshot.lastMessageId)
-        );
-
-        let scrollMode = 'bottom';
-        if (prevLayerUuid && currentLayerUuid === prevLayerUuid) {
-          if (currentLayerChanged && wasNearBottom) scrollMode = 'bottom';
-          else scrollMode = 'preserve';
-        }
-
-        showLayer(currentLayerUuid, null, { scrollMode, previousScrollTop: prevScrollTop });
-        pendingNewMessagesLayerUuid = (currentLayerChanged && !wasNearBottom) ? currentLayerUuid : null;
-        setNewMessagesIndicatorVisible(!!pendingNewMessagesLayerUuid && currentLayerUuid === pendingNewMessagesLayerUuid);
-        rememberLayerSnapshots(viewState.state);
-        updateComposerVisibility();
-        reconcileLayerWipFromView(currentChannel);
-        cleanupLayerWip();
-        return;
+      if (!currentTopicUUID) {
+        console.warn('[topicuuid-view] missing currentTopicUUID', {
+          currentSource,
+          currentChannel,
+          currentTopicName,
+        });
+        throw new Error('currentTopicUUID required for topic view load');
       }
 
-      await loadView(currentSource, currentChannel);
+      const msgDiv = document.getElementById('messages');
+      const prevLayerUuid = currentLayerUuid;
+      const prevScrollTop = msgDiv ? msgDiv.scrollTop : 0;
+      const wasNearBottom = isNearBottom(msgDiv);
+      const prevSnapshot = prevLayerUuid ? lastLayerSnapshots.get(String(prevLayerUuid)) : null;
+
+      let out;
+      try {
+        out = await api('GET', `/topics/${encodeURIComponent(currentTopicUUID)}/view`);
+      } catch (err) {
+        console.error('[topicuuid-view] failed to load topic view', {
+          currentTopicUUID,
+          currentSource,
+          currentChannel,
+          error: String(err?.message || err),
+        });
+        throw err;
+      }
+
+      viewState = { tree: out.tree, currentLayerUuid: out.currentLayerUuid, state: out.state };
+      const topic = out.topic || {};
+      currentSource = topic.source || currentSource;
+      currentChannel = topic?.locator?.channel || currentChannel;
+      currentTopicChatId = topic?.locator?.chatId || currentTopicChatId;
+      currentTopicName = topic?.name || currentTopicName;
+      currentTopicDeletedAt = topic?.deletedAt || null;
+
+      await loadLayerStatuses();
+      const saved = getSavedLayer(currentSource, currentChannel);
+      const exists = saved && viewState?.state?.layers?.[saved];
+      currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
+      expandPathToLayer(currentLayerUuid);
+      renderTree(viewState.tree);
+
+      const currentSnapshot = currentLayerUuid ? getLayerSnapshot(viewState.state, currentLayerUuid) : null;
+      const currentLayerChanged = !!(
+        prevLayerUuid
+        && currentLayerUuid === prevLayerUuid
+        && prevSnapshot
+        && currentSnapshot
+        && (currentSnapshot.messageCount !== prevSnapshot.messageCount || currentSnapshot.lastMessageId !== prevSnapshot.lastMessageId)
+      );
+
+      let scrollMode = 'bottom';
+      if (prevLayerUuid && currentLayerUuid === prevLayerUuid) {
+        if (currentLayerChanged && wasNearBottom) scrollMode = 'bottom';
+        else scrollMode = 'preserve';
+      }
+
+      showLayer(currentLayerUuid, null, { scrollMode, previousScrollTop: prevScrollTop });
+      pendingNewMessagesLayerUuid = (currentLayerChanged && !wasNearBottom) ? currentLayerUuid : null;
+      setNewMessagesIndicatorVisible(!!pendingNewMessagesLayerUuid && currentLayerUuid === pendingNewMessagesLayerUuid);
+      rememberLayerSnapshots(viewState.state);
+      updateComposerVisibility();
+      reconcileLayerWipFromView(currentChannel);
+      cleanupLayerWip();
     }
 
     async function createTopicFromUI() {
@@ -1060,7 +1076,7 @@
           currentTopicName = label;
           sel.value = value;
           updateComposerVisibility();
-          await loadView(currentSource, currentChannel);
+          console.warn('[topicuuid-view] legacy channel row click without topicUUID', { currentSource, currentChannel });
         };
         topicList.appendChild(row);
       });
