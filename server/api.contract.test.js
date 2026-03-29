@@ -81,12 +81,10 @@ describe('API contract tests', () => {
     expect(Array.isArray(rootLayer.children)).toBe(true);
   });
 
-  it('GET /api/sources/:source/channels/:channel/layers/:layerUuid returns 404 error schema when missing', async () => {
-    const res = await request(app)
+  it('GET /api/sources/:source/channels/:channel/layers/:layerUuid is removed', async () => {
+    await request(app)
       .get('/api/sources/telegram/channels/55/layers/NOPE')
       .expect(404);
-
-    expect(res.body).toEqual({ error: 'Layer not found' });
   });
 
   it('GET /api/telegram/topics returns 400 error schema when chat is missing', async () => {

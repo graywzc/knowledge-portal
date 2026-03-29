@@ -122,14 +122,6 @@ app.post('/api/search/topics', (req, res) => {
   }
 });
 
-/** Get a layer for a source+channel */
-app.get('/api/sources/:source/channels/:channel/layers/:layerUuid', (req, res) => {
-  const nav = buildTree(req.params.source, req.params.channel);
-  const layer = nav.getLayer(req.params.layerUuid);
-  if (!layer) return res.status(404).json({ error: 'Layer not found' });
-  res.json(layer);
-});
-
 /** Get all layers for a source+channel (full view) */
 app.get('/api/sources/:source/channels/:channel/view', (req, res) => {
   const nav = buildTree(req.params.source, req.params.channel);
