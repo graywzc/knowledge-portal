@@ -122,12 +122,6 @@ app.post('/api/search/topics', (req, res) => {
   }
 });
 
-/** Get tree for a source+channel */
-app.get('/api/sources/:source/channels/:channel/tree', (req, res) => {
-  const nav = buildTree(req.params.source, req.params.channel);
-  res.json(nav.getTree());
-});
-
 /** Get a layer for a source+channel */
 app.get('/api/sources/:source/channels/:channel/layers/:layerUuid', (req, res) => {
   const nav = buildTree(req.params.source, req.params.channel);
