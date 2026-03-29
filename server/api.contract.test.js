@@ -84,8 +84,9 @@ describe('API contract tests', () => {
   it('GET /api/topics/:topicUUID resolves topic metadata and /view matches old endpoint payload', async () => {
     const db = new Database(dbPath);
     db.getTelegramTopics('-100');
-    const topics = db.searchTopics({ source: 'telegram', query: 'hello', scope: { chatId: '-100' } });
-    const topicUUID = topics.results[0].locator.topicUUID;
+    const topics = db.searchTopics({ query: 'hello' });
+    const topicUUID = topics.results.find((t) => t.source === 'telegram')?.topicUUID;
+    expect(topicUUID).toBeTruthy();
     db.close();
 
     const metaRes = await request(app).get(`/api/topics/${encodeURIComponent(topicUUID)}`).expect(200);
