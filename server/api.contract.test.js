@@ -81,6 +81,31 @@ describe('API contract tests', () => {
     expect(Array.isArray(rootLayer.children)).toBe(true);
   });
 
+  it('GET /api/topics/:topicUUID resolves topic metadata and /view matches old endpoint payload', async () => {
+    const db = new Database(dbPath);
+    db.getTelegramTopics('-100');
+    const topics = db.searchTopics({ source: 'telegram', query: 'hello', scope: { chatId: '-100' } });
+    const topicUUID = topics.results[0].locator.topicUUID;
+    db.close();
+
+    const metaRes = await request(app).get(`/api/topics/${encodeURIComponent(topicUUID)}`).expect(200);
+    expect(metaRes.body).toEqual(expect.objectContaining({
+      topicUUID,
+      source: 'telegram',
+      locator: expect.objectContaining({ topicId: '55', channel: '55', chatId: '-100' }),
+    }));
+
+    const oldRes = await request(app).get('/api/sources/telegram/channels/55/view').expect(200);
+    const newRes = await request(app).get(`/api/topics/${encodeURIComponent(topicUUID)}/view`).expect(200);
+
+    expect(newRes.body).toEqual(expect.objectContaining({
+      topic: expect.objectContaining({ topicUUID, source: 'telegram' }),
+      tree: oldRes.body.tree,
+      currentLayerUuid: oldRes.body.currentLayerUuid,
+      state: oldRes.body.state,
+    }));
+  });
+
   it('GET /api/sources/:source/channels/:channel/layers/:layerUuid is removed', async () => {
     await request(app)
       .get('/api/sources/telegram/channels/55/layers/NOPE')

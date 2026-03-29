@@ -122,6 +122,26 @@ app.post('/api/search/topics', (req, res) => {
   }
 });
 
+/** Resolve topic metadata by topicUUID */
+app.get('/api/topics/:topicUUID', (req, res) => {
+  const out = db.resolveTopicScopeByUUID(req.params.topicUUID);
+  if (!out) return res.status(404).json({ error: 'Topic not found' });
+  res.json(out);
+});
+
+/** Get full view by topicUUID */
+app.get('/api/topics/:topicUUID/view', (req, res) => {
+  const topic = db.resolveTopicScopeByUUID(req.params.topicUUID);
+  if (!topic) return res.status(404).json({ error: 'Topic not found' });
+  const nav = buildTree(topic.source, topic.locator.channel);
+  res.json({
+    topic,
+    tree: nav.getTree(),
+    currentLayerUuid: nav.getCurrentLayerUuid(),
+    state: nav.exportState(),
+  });
+});
+
 /** Get all layers for a source+channel (full view) */
 app.get('/api/sources/:source/channels/:channel/view', (req, res) => {
   const nav = buildTree(req.params.source, req.params.channel);

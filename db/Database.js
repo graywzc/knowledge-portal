@@ -239,6 +239,31 @@ class Database {
     return { ...row, meta };
   }
 
+  resolveTopicScopeByUUID(topicUUID) {
+    const topic = this.getTopicByUUID(topicUUID);
+    if (!topic) return null;
+    if (String(topic.source) === 'telegram') {
+      const chatId = topic.meta?.chatId || topic.meta?.containerId || null;
+      const topicId = topic.meta?.topicId || null;
+      if (!chatId || !topicId) return null;
+      return {
+        topicUUID: String(topic.topic_uuid),
+        source: 'telegram',
+        name: topic.name || null,
+        locator: {
+          chatId: String(chatId),
+          topicId: String(topicId),
+          channel: String(topicId),
+        },
+        createdAt: topic.created_at ? Number(topic.created_at) : null,
+        updatedAt: topic.updated_at ? Number(topic.updated_at) : null,
+        archived: !!topic.archived,
+        deletedAt: topic.deleted_at ? Number(topic.deleted_at) : null,
+      };
+    }
+    return null;
+  }
+
   setTopicArchived(topicUUID, archived) {
     return this.db.prepare(
       `UPDATE topics
