@@ -88,7 +88,6 @@ It reads credentials/session from:
 
 - `POST /api/messages` — add a message `{ id, sender, replyToId?, content, timestamp? }`
 - `GET /api/layers/:id` — get layer by id
-- `GET /api/tree` — get full tree structure
 - `GET /api/current` — get current layer
 - `GET /api/state` — export state
 - `POST /api/state` — import state
