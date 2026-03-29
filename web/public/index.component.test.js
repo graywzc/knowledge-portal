@@ -48,6 +48,9 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
         json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }],
       };
     }
+    if (u.includes('/api/topics/topic%3Atelegram%3A-100%3A55/view') || u.includes('/api/topics/topic:telegram:-100:55/view')) {
+      return { json: async () => ({ topic: { topicUUID: 'topic:telegram:-100:55', source: 'telegram', name: '[V1] Tennis Social Media App', locator: { chatId: '-1003826585913', topicId: '55', channel: '55' }, deletedAt: null }, tree: view.tree, currentLayerUuid: view.currentLayerUuid, state: view.state }) };
+    }
     if (u.endsWith('/api/sources/telegram/channels/55/view')) return { json: async () => view };
     if (u.includes('/api/layers/status?')) return { json: async () => ({ ok: true, layers: { B: { title: 'Branch Layer', done: false, updatedAt: 1 } } }) };
     if (u.includes('/api/layers/') && u.endsWith('/done') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
@@ -149,7 +152,7 @@ describe('web component behavior (index.html)', () => {
     await flush();
 
     expect(document.querySelectorAll('#messages .msg').length).toBe(1);
-    expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/sources/telegram/channels/55/view'), expect.anything());
+    expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/topics/topic%3Atelegram%3A-100%3A55/view'), expect.anything());
   });
 
   it('navigates to child layer via branch badge and can go back via header link', async () => {
