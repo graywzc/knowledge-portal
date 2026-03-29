@@ -171,7 +171,13 @@
           <h2 id="topics-tab-active" class="topics-tab active">TOPICS</h2>
           <h2 id="topics-tab-archived" class="topics-tab">ARCHIVES</h2>
         </div>
-        <button id="create-topic-btn" class="sidebar-mini-btn" type="button">+ Topic</button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button id="topic-title-search-toggle" class="sidebar-mini-btn" type="button" aria-label="Search topics">🔍</button>
+          <button id="create-topic-btn" class="sidebar-mini-btn" type="button">+ Topic</button>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+        <input id="topic-title-search-input" type="text" placeholder="Search topics by title" style="display:none; width:100%; padding:8px 10px; border:1px solid #444; border-radius:8px; background:#16213e; color:#eee; font-size:13px;" />
       </div>
       <select id="channel-select" style="display:none;"></select>
       <div id="topic-list" style="margin-top:8px; display:none;"></div>
@@ -249,6 +255,10 @@
     let currentTopicDeletedAt = null;
     let currentTopicChatId = null;
     let currentTopicUUID = '';
+    let topicTitleSearchQuery = '';
+    let topicTitleSearchResults = [];
+    let topicTitleSearchOpen = false;
+    let hoveredPane = null;
     let topicsViewMode = 'active'; // active | archived
     let viewState = null;
     let topicSearchOpen = false;
@@ -1128,6 +1138,148 @@
       return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
     }
 
+    function formatTopicUpdatedLabel(ts) {
+      if (!ts) return '';
+      const d = new Date(Number(ts));
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+
+    function setTopicTitleSearchOpen(open) {
+      topicTitleSearchOpen = !!open;
+      const input = document.getElementById('topic-title-search-input');
+      if (!input) return;
+      input.style.display = topicTitleSearchOpen ? 'block' : 'none';
+      if (!topicTitleSearchOpen) {
+        clearTopicTitleSearch().catch(() => {});
+        return;
+      }
+      input.focus();
+      input.select();
+      renderTopicTitleSearchResults();
+    }
+
+    function setHoveredPane(pane) {
+      hoveredPane = pane || null;
+      document.body.dataset.hoverPane = hoveredPane || '';
+    }
+
+    function renderTopicTitleSearchResults() {
+      const topicList = document.getElementById('topic-list');
+      if (!topicList) return;
+      const open = topicTitleSearchOpen && !!topicTitleSearchQuery;
+      if (!open) return;
+      topicList.style.display = 'block';
+      topicList.innerHTML = '';
+      if (!topicTitleSearchResults.length) {
+        const empty = document.createElement('div');
+        empty.className = 'topic-search-empty';
+        empty.textContent = 'No topics found';
+        topicList.appendChild(empty);
+        return;
+      }
+      topicTitleSearchResults.forEach((item) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'topic-search-result-row';
+        row.style.width = '100%';
+        const title = document.createElement('div');
+        title.className = 'topic-search-result-title';
+        title.textContent = item.title || item.topicUUID;
+        const meta = document.createElement('div');
+        meta.className = 'topic-search-result-meta';
+        meta.textContent = `${item.source || ''}${item.updatedAt ? ` · ${formatTopicUpdatedLabel(item.updatedAt)}` : ''}`;
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.onclick = async () => {
+          await openTopicTitleSearchResult(item);
+        };
+        topicList.appendChild(row);
+      });
+    }
+
+    async function runTopicTitleSearch(query) {
+      topicTitleSearchQuery = String(query || '').trim();
+      if (!topicTitleSearchOpen) return [];
+      if (!topicTitleSearchQuery) {
+        topicTitleSearchResults = [];
+        if (currentSource) {
+          await loadChannels(currentSource);
+        } else {
+          renderTopicTitleSearchResults();
+        }
+        return [];
+      }
+      const out = await api('POST', '/search/topics', { query: topicTitleSearchQuery });
+      topicTitleSearchResults = Array.isArray(out?.results) ? out.results : [];
+      renderTopicTitleSearchResults();
+      return topicTitleSearchResults;
+    }
+
+    async function clearTopicTitleSearch() {
+      topicTitleSearchQuery = '';
+      topicTitleSearchResults = [];
+      const input = document.getElementById('topic-title-search-input');
+      if (input) input.value = '';
+      if (currentSource) {
+        await loadChannels(currentSource);
+      } else {
+        const topicList = document.getElementById('topic-list');
+        if (topicList) topicList.innerHTML = '';
+      }
+    }
+
+    function toggleMessageSearchFromShortcut() {
+      const nextOpen = !topicSearchOpen;
+      setTopicSearchOpen(nextOpen);
+      if (nextOpen) {
+        const input = document.getElementById('topic-search-input');
+        input?.focus();
+        input?.select();
+      }
+    }
+
+    function openSearchByHoveredPane() {
+      const activeHoverPane = document.body?.dataset?.hoverPane || hoveredPane || null;
+      if (activeHoverPane === 'left') {
+        if (!topicTitleSearchOpen) setTopicSearchOpen(false);
+        setTopicTitleSearchOpen(!topicTitleSearchOpen);
+        return 'left';
+      }
+      if (activeHoverPane === 'right') {
+        if (!topicSearchOpen) setTopicTitleSearchOpen(false);
+        toggleMessageSearchFromShortcut();
+        return 'right';
+      }
+      if (topicTitleSearchOpen) {
+        setTopicTitleSearchOpen(false);
+        return 'left';
+      }
+      toggleMessageSearchFromShortcut();
+      return 'right';
+    }
+
+    window.__kpTest = Object.assign(window.__kpTest || {}, {
+      openSearchByHoveredPane,
+      toggleMessageSearchFromShortcut,
+      setHoveredPane,
+    });
+
+    async function openTopicTitleSearchResult(item) {
+      if (!item) return;
+      topicTitleSearchQuery = '';
+      topicTitleSearchResults = [];
+      const input = document.getElementById('topic-title-search-input');
+      if (input) input.value = '';
+      currentTopicUUID = item.topicUUID || '';
+      currentSource = item.source || currentSource;
+      currentTopicName = item.title || '';
+      currentTopicChatId = item?.meta?.chatId || item?.meta?.containerId || null;
+      currentChannel = item?.meta?.topicId || currentChannel;
+      await loadCurrentTopicView();
+      startRealtimeStream();
+    }
+
     function setNewMessagesIndicatorVisible(visible) {
       const btn = document.getElementById('new-messages-indicator');
       if (!btn) return;
@@ -1365,6 +1517,16 @@
       return idx >= 0 ? s.slice(idx + 1) : s;
     }
 
+    function scrollMessagesBy(delta) {
+      const msgDiv = document.getElementById('messages');
+      if (!msgDiv) return;
+      if (typeof msgDiv.scrollBy === 'function') {
+        msgDiv.scrollBy({ top: delta, behavior: 'smooth' });
+      } else {
+        msgDiv.scrollTop += delta;
+      }
+    }
+
     function isEditableTarget(el) {
       if (!el || typeof el.closest !== 'function') return false;
       if (el.isContentEditable) return true;
@@ -1569,13 +1731,7 @@
     document.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'f') {
         e.preventDefault();
-        const nextOpen = !topicSearchOpen;
-        setTopicSearchOpen(nextOpen);
-        if (nextOpen) {
-          const input = document.getElementById('topic-search-input');
-          input?.focus();
-          input?.select();
-        }
+        openSearchByHoveredPane();
         return;
       }
 
@@ -1639,6 +1795,33 @@
         alert('Create topic failed. Please try again.');
       });
     };
+
+    document.getElementById('topic-title-search-toggle').onclick = () => {
+      setTopicTitleSearchOpen(!topicTitleSearchOpen);
+    };
+
+    document.getElementById('sidebar').addEventListener('mouseenter', () => {
+      setHoveredPane('left');
+    });
+    document.getElementById('sidebar').addEventListener('mouseleave', () => {
+      if (hoveredPane === 'left') setHoveredPane(null);
+    });
+    document.getElementById('main').addEventListener('mouseenter', () => {
+      setHoveredPane('right');
+    });
+    document.getElementById('main').addEventListener('mouseleave', () => {
+      if (hoveredPane === 'right') setHoveredPane(null);
+    });
+
+    document.getElementById('topic-title-search-input').addEventListener('input', (e) => {
+      runTopicTitleSearch(e.target.value).catch(() => {});
+    });
+    document.getElementById('topic-title-search-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setTopicTitleSearchOpen(false);
+      }
+    });
 
     document.getElementById('topic-search-toggle').onclick = () => {
       setTopicSearchOpen(!topicSearchOpen);
