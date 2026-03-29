@@ -561,8 +561,13 @@ describe('web component behavior (index.html)', () => {
       view,
       searchResults: [
         {
+          locator: { chatId: '-1003826585913', topicId: '55', messageId: '1' },
+          snippet: 'older root msg',
+          timestamp: 1700000000000,
+        },
+        {
           locator: { chatId: '-1003826585913', topicId: '55', messageId: '2' },
-          snippet: 'branch msg',
+          snippet: 'newer branch msg',
           timestamp: 1700000001000,
         },
       ],
@@ -582,11 +587,12 @@ describe('web component behavior (index.html)', () => {
     await flush();
     await flush();
 
-    const resultRow = document.querySelector('#topic-search-results .topic-search-result');
-    expect(resultRow).toBeTruthy();
-    expect(resultRow.textContent).toContain('branch msg');
+    const resultRows = Array.from(document.querySelectorAll('#topic-search-results .topic-search-result'));
+    expect(resultRows.length).toBe(2);
+    expect(resultRows[0].textContent).toContain('newer branch msg');
+    expect(resultRows[1].textContent).toContain('older root msg');
 
-    resultRow.click();
+    resultRows[0].click();
     await flush();
 
     expect(document.getElementById('layer-header').textContent).toContain('branch msg');
