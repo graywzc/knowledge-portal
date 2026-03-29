@@ -48,6 +48,26 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
         json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }],
       };
     }
+    if (u.endsWith('/api/search/topics') && opts.method === 'POST') {
+      return {
+        json: async () => ({
+          query: 'portal',
+          total: 1,
+          limit: 50,
+          offset: 0,
+          results: [
+            {
+              topicUUID: 'topic:telegram:-100:55',
+              source: 'telegram',
+              title: 'Knowledge Portal',
+              createdAt: 1700000000000,
+              updatedAt: 1700000001000,
+              meta: { chatId: '-1003826585913', topicId: '55' },
+            },
+          ],
+        }),
+      };
+    }
     if (u.includes('/api/topics/topic%3Atelegram%3A-100%3A55/view') || u.includes('/api/topics/topic:telegram:-100:55/view')) {
       return { json: async () => ({ topic: { topicUUID: 'topic:telegram:-100:55', source: 'telegram', name: '[V1] Tennis Social Media App', locator: { chatId: '-1003826585913', topicId: '55', channel: '55' }, deletedAt: null }, tree: view.tree, currentLayerUuid: view.currentLayerUuid, state: view.state }) };
     }
@@ -584,17 +604,128 @@ describe('web component behavior (index.html)', () => {
     });
   });
 
-  it('opens topic search panel with command+f', async () => {
+  it('toggles message search panel with command+f when hovering right pane', async () => {
     await boot({ view: makeView() });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
 
     const topicRow = document.querySelector('#topic-list .tree-node');
     topicRow.click();
     await flush();
     await flush();
 
+    document.getElementById('main').dispatchEvent(new Event('mouseenter', { bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
     await flush();
     expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(false);
+  });
+
+  it('toggles topic title search with command+f when hovering left pane', async () => {
+    await boot({ view: makeView() });
+
+    document.getElementById('sidebar').dispatchEvent(new Event('mouseenter', { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(document.getElementById('topic-title-search-input').style.display).toBe('block');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(document.getElementById('topic-title-search-input').style.display).toBe('none');
+  });
+
+  it('searches topics by title and opens result by topicUUID', async () => {
+    await boot({ view: makeView() });
+
+    document.getElementById('topic-title-search-toggle').click();
+    await flush();
+
+    const input = document.getElementById('topic-title-search-input');
+    input.value = 'portal';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await flush();
+
+    const result = document.querySelector('#topic-list .topic-search-result-row');
+    expect(result).toBeTruthy();
+    expect(result.textContent).toContain('Knowledge Portal');
+
+    result.click();
+    await flush();
+    await flush();
+
+    expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/search/topics'), expect.anything());
+    expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/topics/topic%3Atelegram%3A-100%3A55/view'), expect.anything());
+  });
+
+  it('shows topic title matches in the topic list area and opens on click', async () => {
+    await boot({ view: makeView() });
+
+    document.getElementById('topic-title-search-toggle').click();
+    await flush();
+
+    const input = document.getElementById('topic-title-search-input');
+    input.value = 'portal';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await flush();
+
+    const topicList = document.getElementById('topic-list');
+    const results = topicList.querySelectorAll('.topic-search-result-row');
+    expect(results.length).toBeGreaterThan(0);
+    expect(topicList.textContent).toContain('Knowledge Portal');
+    expect(topicList.textContent).not.toContain('[V1] Tennis Social Media App');
+
+    results[0].click();
+    await flush();
+    await flush();
+
+    expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/topics/topic%3Atelegram%3A-100%3A55/view'), expect.anything());
+  });
+
+  it('opens topic title search from the sidebar magnifier button', async () => {
+    await boot({ view: makeView() });
+
+    document.getElementById('topic-title-search-toggle').click();
+    await flush();
+
+    expect(document.getElementById('topic-title-search-input').style.display).toBe('block');
+  });
+
+  it('restores the normal topic list when topic title search is cleared', async () => {
+    await boot({ view: makeView() });
+
+    const topicList = document.getElementById('topic-list');
+    expect(topicList.textContent).toContain('[V1] Tennis Social Media App');
+
+    document.getElementById('topic-title-search-toggle').click();
+    await flush();
+
+    const input = document.getElementById('topic-title-search-input');
+    input.value = 'portal';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await flush();
+
+    expect(topicList.textContent).toContain('Knowledge Portal');
+    expect(topicList.textContent).not.toContain('[V1] Tennis Social Media App');
+
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await flush();
+
+    expect(topicList.textContent).toContain('[V1] Tennis Social Media App');
+    expect(topicList.querySelector('.topic-search-result-row')).toBeNull();
   });
 
   it('shows custom layer title from metadata and edits it from layer context menu', async () => {
