@@ -64,7 +64,10 @@
     .topic-search-result:hover { background: #f5f8ff; border-color: #c5d6ff; }
     .topic-search-result.active { background: #e9f1ff; border-color: #8fb0ff; }
     .topic-search-result-snippet { font-size: 13px; line-height: 1.35; color: #1f2937; }
-    .topic-search-result-meta { margin-top: 4px; font-size: 11px; color: #6b7280; }
+    .topic-search-result-snippet mark { background: #ffe58f; color: inherit; padding: 0 1px; border-radius: 3px; }
+    .topic-search-result-meta { margin-top: 4px; font-size: 11px; color: #6b7280; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .topic-search-result-meta-left { min-width: 0; }
+    .topic-search-result-meta-right { margin-left: auto; text-align: right; min-width: 0; }
     .topic-search-empty { font-size: 12px; color: #6b7280; padding: 4px 2px; }
     #layer-header .back-link { display: inline-block; margin-left: 10px; font-weight: 500; font-size: 12px; color: #4a6cf7; cursor: pointer; text-decoration: none; }
     #layer-header .back-link:hover { text-decoration: underline; }
@@ -113,6 +116,7 @@
     body.dark .topic-search-result-meta,
     body.dark .topic-search-empty { color: #a0a7b4; }
     body.dark .topic-search-result-snippet { color: #e8eaed; }
+    body.dark .topic-search-result-snippet mark { background: #7c5e10; color: #fff4cc; }
     body.dark #layer-header .back-link { color: #8fb0ff; }
     body.dark #messages { background: #0f1115; }
     body.dark .msg.self { background: #214a73; color: #e8eaed; }
@@ -258,6 +262,7 @@
     let topicTitleSearchQuery = '';
     let topicTitleSearchResults = [];
     let topicTitleSearchOpen = false;
+    let activeTopicSearchHighlight = null;
     let hoveredPane = null;
     let topicsViewMode = 'active'; // active | archived
     let viewState = null;
@@ -381,6 +386,33 @@
       count.textContent = topicSearchResults.length ? `${topicSearchIndex + 1}/${topicSearchResults.length}` : '0';
     }
 
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function escapeRegex(text) {
+      return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function highlightSearchSnippet(text, query) {
+      const source = String(text || '(no snippet)');
+      const q = String(query || '').trim();
+      if (!q) return escapeHtml(source);
+      const pattern = new RegExp(`(${escapeRegex(q)})`, 'ig');
+      return escapeHtml(source).replace(pattern, '<mark>$1</mark>');
+    }
+
+    function getLayerTitleForSearchResult(result) {
+      const layerUuid = findLayerUuidForMessageId(result?.locator?.messageId);
+      if (!layerUuid) return '';
+      return layerTitle(layerUuid);
+    }
+
     function renderTopicSearchResults() {
       const container = document.getElementById('topic-search-results');
       if (!container) return;
@@ -403,11 +435,21 @@
 
         const snippet = document.createElement('div');
         snippet.className = 'topic-search-result-snippet';
-        snippet.textContent = result.snippet || '(no snippet)';
+        snippet.innerHTML = highlightSearchSnippet(result.snippet, topicSearchQuery);
 
         const meta = document.createElement('div');
         meta.className = 'topic-search-result-meta';
-        meta.textContent = `#${result?.locator?.messageId || ''} · ${formatSearchTimestamp(result.timestamp)}`;
+
+        const metaLeft = document.createElement('div');
+        metaLeft.className = 'topic-search-result-meta-left';
+        metaLeft.textContent = `#${result?.locator?.messageId || ''} · ${formatSearchTimestamp(result.timestamp)}`;
+
+        const metaRight = document.createElement('div');
+        metaRight.className = 'topic-search-result-meta-right';
+        metaRight.textContent = getLayerTitleForSearchResult(result);
+
+        meta.appendChild(metaLeft);
+        meta.appendChild(metaRight);
 
         btn.appendChild(snippet);
         btn.appendChild(meta);
@@ -476,6 +518,10 @@
       const result = topicSearchResults[index];
       if (!result) return;
       topicSearchIndex = index;
+      activeTopicSearchHighlight = {
+        query: topicSearchQuery,
+        messageId: String(result?.locator?.messageId || ''),
+      };
       renderTopicSearchResults();
       updateTopicSearchCount();
       const layerUuid = findLayerUuidForMessageId(result?.locator?.messageId);
@@ -1460,16 +1506,20 @@
         el.setAttribute('data-msg-sender', m.sender);
         let html = '';
 
+        const messageHighlightQuery = (activeTopicSearchHighlight && String(activeTopicSearchHighlight.messageId) === String(getShortChatId(m.id)))
+          ? activeTopicSearchHighlight.query
+          : '';
+
         if (m.contentType === 'image' && m.mediaPath) {
           const mediaUrl = mediaUrlFromPath(m.mediaPath);
           if (mediaUrl) {
             html += `<img class="media-image" src="${escapeHtml(mediaUrl)}" alt="image ${escapeHtml(getShortChatId(m.id))}" loading="lazy" />`;
           }
           if (m.content && m.content !== '[media]') {
-            html += `<div class="media-caption">${renderRichContent(m.content, m.entities)}</div>`;
+            html += `<div class="media-caption">${renderRichContent(m.content, m.entities, { highlightQuery: messageHighlightQuery })}</div>`;
           }
         } else {
-          html += renderRichContent(m.content, m.entities);
+          html += renderRichContent(m.content, m.entities, { highlightQuery: messageHighlightQuery });
         }
 
         html += `<div class="meta">${m.sender}`;
@@ -1616,15 +1666,53 @@
       return enhanceCodeBlocks(DOMPurify.sanitize(raw));
     }
 
-    function renderRichContent(text, entities = null) {
+    function applyHighlightToRenderedHtml(html, query) {
+      const q = String(query || '').trim();
+      if (!q || !html) return html;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      const walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT, null);
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+
+      const lowerQ = q.toLowerCase();
+      nodes.forEach((node) => {
+        const parentTag = node.parentElement?.tagName?.toLowerCase();
+        if (!node.nodeValue || ['script', 'style', 'mark'].includes(parentTag)) return;
+        const text = node.nodeValue;
+        const lower = text.toLowerCase();
+        const index = lower.indexOf(lowerQ);
+        if (index < 0) return;
+
+        const frag = document.createDocumentFragment();
+        let cursor = 0;
+        while (cursor < text.length) {
+          const nextIndex = text.toLowerCase().indexOf(lowerQ, cursor);
+          if (nextIndex < 0) {
+            frag.appendChild(document.createTextNode(text.slice(cursor)));
+            break;
+          }
+          if (nextIndex > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, nextIndex)));
+          const mark = document.createElement('mark');
+          mark.textContent = text.slice(nextIndex, nextIndex + q.length);
+          frag.appendChild(mark);
+          cursor = nextIndex + q.length;
+        }
+        node.parentNode.replaceChild(frag, node);
+      });
+
+      return wrap.innerHTML;
+    }
+
+    function renderRichContent(text, entities = null, { highlightQuery = '' } = {}) {
       try {
         const fromEntities = renderFromEntities(text, entities);
-        if (fromEntities) return fromEntities;
+        if (fromEntities) return applyHighlightToRenderedHtml(fromEntities, highlightQuery);
 
         const pre = preprocessMessageForMarkdown(text);
         const raw = md.render(pre);
         const safe = DOMPurify.sanitize(raw);
-        return enhanceCodeBlocks(safe);
+        return applyHighlightToRenderedHtml(enhanceCodeBlocks(safe), highlightQuery);
       } catch (_) {
         return escapeHtml(String(text || ''));
       }
