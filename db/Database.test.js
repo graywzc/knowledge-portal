@@ -294,6 +294,60 @@ describe('Database', () => {
     assert.strictEqual(typeof result.results[0].meta.chatId, 'string');
   });
 
+  it('updates topic and layer updated_at from ingested message timestamps', () => {
+    const db = createTestDb();
+
+    db.upsertLayers('telegram', '55', [{ id: 'layer-a', firstMessageId: 'tg:-100:1', parentLayerUuid: null }]);
+
+    db.insertMessage({
+      id: 'tg:-100:1',
+      source: 'telegram',
+      chatId: '-100',
+      topicId: '55',
+      senderId: 'u1',
+      content: 'older',
+      timestamp: 1000,
+      rawMeta: { topic_title: 'Knowledge Portal' },
+    });
+
+    db.getTelegramTopics('-100');
+
+    let topic = db.searchTopics({ query: 'knowledge' }).results[0];
+    let layer = db.getLayerStatuses('telegram', '55').find((r) => r.layer_uuid === 'layer-a');
+    assert.strictEqual(topic.updatedAt, 1000);
+    assert.strictEqual(layer.updated_at, 1000);
+
+    db.insertMessage({
+      id: 'tg:-100:2',
+      source: 'telegram',
+      chatId: '-100',
+      topicId: '55',
+      senderId: 'u1',
+      content: 'newer',
+      timestamp: 2500,
+    });
+
+    topic = db.searchTopics({ query: 'knowledge' }).results[0];
+    layer = db.getLayerStatuses('telegram', '55').find((r) => r.layer_uuid === 'layer-a');
+    assert.strictEqual(topic.updatedAt, 2500);
+    assert.strictEqual(layer.updated_at, 2500);
+
+    db.insertMessage({
+      id: 'tg:-100:3',
+      source: 'telegram',
+      chatId: '-100',
+      topicId: '55',
+      senderId: 'u1',
+      content: 'late ingest old timestamp',
+      timestamp: 1500,
+    });
+
+    topic = db.searchTopics({ query: 'knowledge' }).results[0];
+    layer = db.getLayerStatuses('telegram', '55').find((r) => r.layer_uuid === 'layer-a');
+    assert.strictEqual(topic.updatedAt, 2500);
+    assert.strictEqual(layer.updated_at, 2500);
+  });
+
   it('normalizes legacy telegram scope rows, lists sources, and closes db', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-portal-db-legacy-'));
     const dbPath = path.join(dir, 'legacy.db');

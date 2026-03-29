@@ -146,8 +146,7 @@ class Database {
     const chatId = msg.chatId ? String(msg.chatId) : null;
     const topicId = (msg.topicId === null || msg.topicId === undefined || msg.topicId === '') ? null : String(msg.topicId);
     const scope = msg.channel || topicId || chatId;
-
-    return stmt.run(
+    const inserted = stmt.run(
       msg.id,
       msg.source,
       scope,
@@ -167,6 +166,16 @@ class Database {
       msg.timestamp,
       msg.rawMeta ? JSON.stringify(msg.rawMeta) : null,
     );
+
+    this.touchUpdatedAtForMessage({
+      source: msg.source,
+      channel: scope,
+      chatId,
+      topicId,
+      timestamp: msg.timestamp,
+    });
+
+    return inserted;
   }
 
   /**
@@ -445,6 +454,46 @@ class Database {
       .join('\n');
 
     return this.#hashString(payload);
+  }
+
+  touchUpdatedAtForMessage({ source, channel, chatId, topicId, timestamp }) {
+    const ts = Number(timestamp || 0);
+    if (!Number.isFinite(ts) || ts <= 0) return;
+
+    const normalizedSource = String(source || '');
+    const normalizedChannel = channel == null ? null : String(channel);
+    const normalizedChatId = chatId == null ? null : String(chatId);
+    const normalizedTopicId = topicId == null ? null : String(topicId);
+
+    if (normalizedSource && normalizedChannel) {
+      const maxRow = this.db.prepare(
+        `SELECT MAX(timestamp) AS max_ts
+         FROM messages
+         WHERE source = ?
+           AND (channel = ? OR topic_id = ? OR chat_id = ?)`
+      ).get(normalizedSource, normalizedChannel, normalizedChannel, normalizedChannel);
+      const layerUpdatedAt = Number(maxRow?.max_ts || ts);
+      this.db.prepare(
+        `UPDATE layers
+         SET updated_at = ?
+         WHERE source = ? AND channel = ?`
+      ).run(layerUpdatedAt, normalizedSource, normalizedChannel);
+    }
+
+    if (normalizedSource === 'telegram' && normalizedChatId && normalizedTopicId) {
+      const topicUUID = this.getOrCreateTopicUUID(normalizedSource, normalizedChatId, normalizedTopicId);
+      const maxRow = this.db.prepare(
+        `SELECT MAX(timestamp) AS max_ts
+         FROM messages
+         WHERE source = ? AND chat_id = ? AND topic_id = ?`
+      ).get(normalizedSource, normalizedChatId, normalizedTopicId);
+      const topicUpdatedAt = Number(maxRow?.max_ts || ts);
+      this.db.prepare(
+        `UPDATE topics
+         SET updated_at = ?
+         WHERE topic_uuid = ?`
+      ).run(topicUpdatedAt, String(topicUUID));
+    }
   }
 
   upsertLayers(source, channel, layers = []) {
