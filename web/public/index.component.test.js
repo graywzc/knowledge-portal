@@ -591,11 +591,19 @@ describe('web component behavior (index.html)', () => {
     expect(resultRows.length).toBe(2);
     expect(resultRows[0].textContent).toContain('newer branch msg');
     expect(resultRows[1].textContent).toContain('older root msg');
+    expect(resultRows[0].querySelector('mark')?.textContent.toLowerCase()).toBe('branch');
+
+    const metaLeft = resultRows[0].querySelector('.topic-search-result-meta-left');
+    const metaRight = resultRows[0].querySelector('.topic-search-result-meta-right');
+    expect(metaLeft?.textContent).toContain('#2');
+    expect(metaRight?.textContent).toContain('Branch Layer');
 
     resultRows[0].click();
     await flush();
 
     expect(document.getElementById('layer-header').textContent).toContain('branch msg');
+    const highlightedInPage = document.querySelector('#messages .msg mark');
+    expect(highlightedInPage?.textContent.toLowerCase()).toBe('branch');
 
     const searchCall = window.fetch.mock.calls.find(([url, opts]) =>
       String(url).includes('/api/search/messages') && opts?.method === 'POST');
