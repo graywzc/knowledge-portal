@@ -248,6 +248,7 @@
     let pendingImageDataUrl = null;
     let currentTopicDeletedAt = null;
     let currentTopicChatId = null;
+    let currentTopicUUID = '';
     let topicsViewMode = 'active'; // active | archived
     let viewState = null;
     let topicSearchOpen = false;
@@ -736,10 +737,10 @@
 
     async function refreshCurrentView() {
       if (realtimeRefreshPending) return;
-      if (!currentSource || !currentChannel) return;
+      if (!currentTopicUUID && (!currentSource || !currentChannel)) return;
       realtimeRefreshPending = true;
       try {
-        await loadView(currentSource, currentChannel);
+        await loadCurrentTopicView();
       } catch (_) {
       } finally {
         realtimeRefreshPending = false;
@@ -820,7 +821,7 @@
         autoGrowComposerInput();
         clearPendingImage();
         setReplyTarget(null);
-        await loadView(currentSource, currentChannel);
+        await loadCurrentTopicView();
       } catch (e) {
         alert('Send failed. Please try again.');
       } finally {
@@ -846,6 +847,74 @@
       }
     }
 
+    async function loadCurrentTopicView() {
+      if (!currentTopicUUID) {
+        console.warn('[topicuuid-view] missing currentTopicUUID', {
+          currentSource,
+          currentChannel,
+          currentTopicName,
+        });
+        throw new Error('currentTopicUUID required for topic view load');
+      }
+
+      const msgDiv = document.getElementById('messages');
+      const prevLayerUuid = currentLayerUuid;
+      const prevScrollTop = msgDiv ? msgDiv.scrollTop : 0;
+      const wasNearBottom = isNearBottom(msgDiv);
+      const prevSnapshot = prevLayerUuid ? lastLayerSnapshots.get(String(prevLayerUuid)) : null;
+
+      let out;
+      try {
+        out = await api('GET', `/topics/${encodeURIComponent(currentTopicUUID)}/view`);
+      } catch (err) {
+        console.error('[topicuuid-view] failed to load topic view', {
+          currentTopicUUID,
+          currentSource,
+          currentChannel,
+          error: String(err?.message || err),
+        });
+        throw err;
+      }
+
+      viewState = { tree: out.tree, currentLayerUuid: out.currentLayerUuid, state: out.state };
+      const topic = out.topic || {};
+      currentSource = topic.source || currentSource;
+      currentChannel = topic?.locator?.channel || currentChannel;
+      currentTopicChatId = topic?.locator?.chatId || currentTopicChatId;
+      currentTopicName = topic?.name || currentTopicName;
+      currentTopicDeletedAt = topic?.deletedAt || null;
+
+      await loadLayerStatuses();
+      const saved = getSavedLayer(currentSource, currentChannel);
+      const exists = saved && viewState?.state?.layers?.[saved];
+      currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
+      expandPathToLayer(currentLayerUuid);
+      renderTree(viewState.tree);
+
+      const currentSnapshot = currentLayerUuid ? getLayerSnapshot(viewState.state, currentLayerUuid) : null;
+      const currentLayerChanged = !!(
+        prevLayerUuid
+        && currentLayerUuid === prevLayerUuid
+        && prevSnapshot
+        && currentSnapshot
+        && (currentSnapshot.messageCount !== prevSnapshot.messageCount || currentSnapshot.lastMessageId !== prevSnapshot.lastMessageId)
+      );
+
+      let scrollMode = 'bottom';
+      if (prevLayerUuid && currentLayerUuid === prevLayerUuid) {
+        if (currentLayerChanged && wasNearBottom) scrollMode = 'bottom';
+        else scrollMode = 'preserve';
+      }
+
+      showLayer(currentLayerUuid, null, { scrollMode, previousScrollTop: prevScrollTop });
+      pendingNewMessagesLayerUuid = (currentLayerChanged && !wasNearBottom) ? currentLayerUuid : null;
+      setNewMessagesIndicatorVisible(!!pendingNewMessagesLayerUuid && currentLayerUuid === pendingNewMessagesLayerUuid);
+      rememberLayerSnapshots(viewState.state);
+      updateComposerVisibility();
+      reconcileLayerWipFromView(currentChannel);
+      cleanupLayerWip();
+    }
+
     async function createTopicFromUI() {
       if (currentSource !== 'telegram') return;
       const title = window.prompt('New topic title');
@@ -866,11 +935,12 @@
       await loadChannels('telegram');
       if (result?.topicId) {
         currentChannel = String(result.topicId);
+        currentTopicUUID = result?.topicUUID ? String(result.topicUUID) : currentTopicUUID;
         currentTopicName = trimmed;
         currentTopicChatId = result?.chatId ? String(result.chatId) : currentTopicChatId;
         currentTopicDeletedAt = null;
         updateComposerVisibility();
-        await loadView(currentSource, currentChannel);
+        await loadCurrentTopicView();
         startRealtimeStream();
       }
     }
@@ -910,7 +980,7 @@
 
       await loadChannels('telegram');
       if (String(currentChannel) === String(topicId)) {
-        await loadView(currentSource, currentChannel);
+        await loadCurrentTopicView();
       }
     }
 
@@ -946,6 +1016,7 @@
         topics.forEach(t => {
           const opt = document.createElement('option');
           opt.value = t.id;
+          opt.dataset.topicUuid = t.topicUUID || '';
           opt.textContent = t.name || t.id;
           sel.appendChild(opt);
 
@@ -960,12 +1031,13 @@
 
           row.onclick = async () => {
             currentChannel = t.id;
+            currentTopicUUID = t.topicUUID ? String(t.topicUUID) : '';
             currentTopicName = t.name || '';
             currentTopicChatId = t.chatId ? String(t.chatId) : null;
             currentTopicDeletedAt = t.deletedAt || null;
             sel.value = t.id;
             updateComposerVisibility();
-            await loadView(currentSource, currentChannel);
+            await loadCurrentTopicView();
             startRealtimeStream();
           };
 
@@ -1004,7 +1076,7 @@
           currentTopicName = label;
           sel.value = value;
           updateComposerVisibility();
-          await loadView(currentSource, currentChannel);
+          console.warn('[topicuuid-view] legacy channel row click without topicUUID', { currentSource, currentChannel });
         };
         topicList.appendChild(row);
       });
@@ -1535,6 +1607,7 @@
     document.getElementById('source-select').onchange = async (e) => {
       currentSource = e.target.value;
       currentChannel = '';
+      currentTopicUUID = '';
       currentTopicName = '';
       currentTopicChatId = null;
       currentTopicDeletedAt = null;
@@ -1548,12 +1621,13 @@
     document.getElementById('channel-select').onchange = async (e) => {
       currentChannel = e.target.value;
       const opt = e.target.selectedOptions && e.target.selectedOptions[0];
+      currentTopicUUID = opt?.dataset?.topicUuid || '';
       currentTopicName = opt ? opt.textContent : '';
       currentTopicChatId = null;
       currentTopicDeletedAt = null;
       updateComposerVisibility();
       if (currentSource && currentChannel) {
-        await loadView(currentSource, currentChannel);
+        await loadCurrentTopicView();
         if (currentSource === 'telegram') startRealtimeStream();
       } else {
         stopRealtimeStream();
