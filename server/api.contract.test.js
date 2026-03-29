@@ -84,8 +84,9 @@ describe('API contract tests', () => {
   it('GET /api/topics/:topicUUID resolves topic metadata and /view matches old endpoint payload', async () => {
     const db = new Database(dbPath);
     db.getTelegramTopics('-100');
-    const topics = db.searchTopics({ source: 'telegram', query: 'hello', scope: { chatId: '-100' } });
-    const topicUUID = topics.results[0].locator.topicUUID;
+    const topics = db.searchTopics({ query: 'hello' });
+    const topicUUID = topics.results.find((t) => t.source === 'telegram')?.topicUUID;
+    expect(topicUUID).toBeTruthy();
     db.close();
 
     const metaRes = await request(app).get(`/api/topics/${encodeURIComponent(topicUUID)}`).expect(200);
@@ -216,39 +217,32 @@ describe('API contract tests', () => {
 
     const res = await request(app)
       .post('/api/search/topics')
-      .send({
-        source: 'telegram',
-        query: 'portal',
-        scope: { chatId: '-100' },
-      })
+      .send({ query: 'portal' })
       .expect(200);
 
     expect(res.body).toEqual(expect.objectContaining({
-      source: 'telegram',
       query: 'portal',
       total: expect.any(Number),
       results: expect.arrayContaining([
         expect.objectContaining({
-          locator: { topicUUID: expect.any(String) },
+          topicUUID: expect.any(String),
+          source: 'telegram',
           title: 'Knowledge Portal Search',
           createdAt: expect.any(Number),
           updatedAt: expect.any(Number),
+          meta: expect.objectContaining({ chatId: '-100', topicId: '88' }),
         }),
       ]),
     }));
   });
 
-  it('POST /api/search/topics requires chatId for telegram', async () => {
+  it('POST /api/search/topics requires query', async () => {
     const res = await request(app)
       .post('/api/search/topics')
-      .send({
-        source: 'telegram',
-        query: 'portal',
-        scope: {},
-      })
+      .send({})
       .expect(400);
 
-    expect(res.body).toEqual({ error: 'scope.chatId required' });
+    expect(res.body).toEqual({ error: 'query required' });
   });
 
   it('POST /api/ingest is removed', async () => {

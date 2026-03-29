@@ -282,19 +282,16 @@ describe('Database', () => {
 
     db.getTelegramTopics('-100');
 
-    const result = db.searchTopics({
-      source: 'telegram',
-      query: 'portal',
-      scope: { chatId: '-100' },
-    });
+    const result = db.searchTopics({ query: 'portal' });
 
-    assert.strictEqual(result.source, 'telegram');
     assert.strictEqual(result.query, 'portal');
     assert.strictEqual(result.total, 2);
-    assert.strictEqual(typeof result.results[0].locator.topicUUID, 'string');
+    assert.strictEqual(typeof result.results[0].topicUUID, 'string');
+    assert.strictEqual(result.results[0].source, 'telegram');
     assert.deepEqual(result.results.map((r) => r.title), ['Portal Search UX', 'Knowledge Portal']);
     assert.strictEqual(typeof result.results[0].createdAt, 'number');
     assert.strictEqual(typeof result.results[0].updatedAt, 'number');
+    assert.strictEqual(typeof result.results[0].meta.chatId, 'string');
   });
 
   it('normalizes legacy telegram scope rows, lists sources, and closes db', () => {

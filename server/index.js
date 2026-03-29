@@ -110,8 +110,8 @@ app.get('/api/telegram/topics', (req, res) => {
 /** Search topics by title (read-only) */
 app.post('/api/search/topics', (req, res) => {
   try {
-    const { source, query, scope, limit, offset, sort } = req.body || {};
-    const result = db.searchTopics({ source, query, scope, limit, offset, sort });
+    const { query, limit, offset, sort } = req.body || {};
+    const result = db.searchTopics({ query, limit, offset, sort });
     return res.json(result);
   } catch (err) {
     const msg = String(err?.message || err);

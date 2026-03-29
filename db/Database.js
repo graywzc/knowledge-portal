@@ -280,65 +280,50 @@ class Database {
     ).run(deletedAtMs, String(topicUUID));
   }
 
-  searchTopics({ source, query, scope = {}, limit = 50, offset = 0, sort = {} }) {
-    const normalizedSource = String(source || '').trim();
+  searchTopics({ query, limit = 50, offset = 0, sort = {} }) {
     const normalizedQuery = String(query || '').trim();
     const normalizedLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
     const normalizedOffset = Math.max(0, Number(offset) || 0);
     const sortField = String(sort?.field || 'updatedAt');
     const sortDirection = String(sort?.direction || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-    if (!normalizedSource) throw new Error('source required');
     if (!normalizedQuery) throw new Error('query required');
 
-    if (normalizedSource === 'telegram') {
-      const chatId = scope && scope.chatId != null && scope.chatId !== '' ? String(scope.chatId) : null;
-      const includeArchived = !!scope?.includeArchived;
-      if (!chatId) throw new Error('scope.chatId required');
+    const like = `%${normalizedQuery.replace(/[%_\\]/g, '\\$&')}%`;
+    const rows = this.db.prepare(
+      `SELECT topic_uuid, source, name, meta, created_at, updated_at, archived, deleted_at
+       FROM topics
+       WHERE archived = 0
+         AND deleted_at IS NULL
+         AND name IS NOT NULL
+         AND LOWER(name) LIKE LOWER(?) ESCAPE '\\'`
+    ).all(like)
+      .map((row) => {
+        let meta = null;
+        try { meta = row.meta ? JSON.parse(row.meta) : null; } catch { meta = null; }
+        return { ...row, meta };
+      })
+      .sort((a, b) => {
+        const av = sortField === 'createdAt' ? Number(a.created_at || 0) : Number(a.updated_at || 0);
+        const bv = sortField === 'createdAt' ? Number(b.created_at || 0) : Number(b.updated_at || 0);
+        return sortDirection === 'ASC' ? av - bv : bv - av;
+      });
 
-      const like = `%${normalizedQuery.replace(/[%_\\]/g, '\\$&')}%`;
-      const archivedWhere = includeArchived ? '' : 'AND archived = 0 AND deleted_at IS NULL';
-      const candidates = this.db.prepare(
-        `SELECT topic_uuid, source, name, meta, created_at, updated_at, archived, deleted_at
-         FROM topics
-         WHERE source = ?
-           ${archivedWhere}
-           AND name IS NOT NULL
-           AND LOWER(name) LIKE LOWER(?) ESCAPE '\\'`
-      ).all(normalizedSource, like);
-
-      const rows = candidates
-        .map((row) => {
-          let meta = null;
-          try { meta = row.meta ? JSON.parse(row.meta) : null; } catch { meta = null; }
-          return { ...row, meta };
-        })
-        .filter((row) => String(row.meta?.chatId || row.meta?.containerId || '') === chatId)
-        .sort((a, b) => {
-          const av = sortField === 'createdAt' ? Number(a.created_at || 0) : Number(a.updated_at || 0);
-          const bv = sortField === 'createdAt' ? Number(b.created_at || 0) : Number(b.updated_at || 0);
-          return sortDirection === 'ASC' ? av - bv : bv - av;
-        });
-
-      const paged = rows.slice(normalizedOffset, normalizedOffset + normalizedLimit);
-      return {
-        source: normalizedSource,
-        query: normalizedQuery,
-        total: rows.length,
-        limit: normalizedLimit,
-        offset: normalizedOffset,
-        results: paged.map((row) => ({
-          locator: {
-            topicUUID: String(row.topic_uuid),
-          },
-          title: String(row.name || ''),
-          createdAt: row.created_at ? Number(row.created_at) : null,
-          updatedAt: row.updated_at ? Number(row.updated_at) : null,
-        })),
-      };
-    }
-
-    throw new Error(`unsupported source: ${normalizedSource}`);
+    const paged = rows.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+    return {
+      query: normalizedQuery,
+      total: rows.length,
+      limit: normalizedLimit,
+      offset: normalizedOffset,
+      results: paged.map((row) => ({
+        topicUUID: String(row.topic_uuid),
+        source: String(row.source || ''),
+        title: String(row.name || ''),
+        createdAt: row.created_at ? Number(row.created_at) : null,
+        updatedAt: row.updated_at ? Number(row.updated_at) : null,
+        meta: row.meta || null,
+      })),
+    };
   }
 
   /**
