@@ -818,7 +818,31 @@ describe('web component behavior (index.html)', () => {
     expect(document.getElementById('new-messages-indicator').classList.contains('show')).toBe(true);
   });
 
-  it('supports ctrl/cmd+j and ctrl/cmd+k to move visible layer selection', async () => {
+  it('supports plain j/k for message pane scrolling and ignores composer typing', async () => {
+    await boot({ view: makeView() });
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    const messages = document.getElementById('messages');
+    messages.scrollBy = jest.fn();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+    expect(messages.scrollBy).toHaveBeenCalledWith({ top: 120, behavior: 'smooth' });
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true, cancelable: true }));
+    expect(messages.scrollBy).toHaveBeenCalledWith({ top: -120, behavior: 'smooth' });
+
+    messages.scrollBy.mockClear();
+    const composer = document.getElementById('composer-input');
+    composer.focus();
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+    expect(messages.scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('supports ctrl+j and ctrl+k to move visible layer selection', async () => {
     await boot({ view: makeView({ withBranch: true }) });
 
     const topicRow = document.querySelector('#topic-list .tree-node');
@@ -835,5 +859,51 @@ describe('web component behavior (index.html)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
     await flush();
     expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('A');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', metaKey: true, bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('A');
+  });
+
+  it('keeps ctrl/cmd+j and ctrl/cmd+k working after opening and closing the in-topic search UI', async () => {
+    await boot({ view: makeView({ withBranch: true }) });
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    document.getElementById('topic-search-toggle').click();
+    await flush();
+    expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(true);
+
+    document.getElementById('topic-search-close').click();
+    await flush();
+    expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(false);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('B');
+  });
+
+  it('keeps ctrl/cmd+j and ctrl/cmd+k working after opening and closing the sidebar topic search UI', async () => {
+    await boot({ view: makeView({ withBranch: true }) });
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    document.getElementById('topic-title-search-toggle').click();
+    await flush();
+    expect(document.getElementById('topic-title-search-input').style.display).toBe('block');
+
+    document.getElementById('topic-title-search-toggle').click();
+    await flush();
+    expect(document.getElementById('topic-title-search-input').style.display).toBe('none');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector('#tree .tree-node.active').getAttribute('data-layer-id')).toBe('B');
   });
 });

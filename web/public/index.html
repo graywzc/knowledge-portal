@@ -1533,6 +1533,16 @@
       return !!el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]');
     }
 
+    function scrollMessagesBy(delta) {
+      const msgDiv = document.getElementById('messages');
+      if (!msgDiv) return;
+      if (typeof msgDiv.scrollBy === 'function') {
+        msgDiv.scrollBy({ top: delta, behavior: 'smooth' });
+      } else {
+        msgDiv.scrollTop += delta;
+      }
+    }
+
     function preprocessMessageForMarkdown(text) {
       const s = String(text || '');
       if (!s.trim() || s.includes('```')) return s;
@@ -1735,7 +1745,7 @@
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !isEditableTarget(e.target)) {
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !isEditableTarget(e.target)) {
         const key = String(e.key || '').toLowerCase();
         if (key === 'j') {
           e.preventDefault();
@@ -1745,6 +1755,20 @@
         if (key === 'k') {
           e.preventDefault();
           moveLayerSelection(-1);
+          return;
+        }
+      }
+
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !isEditableTarget(e.target)) {
+        const key = String(e.key || '').toLowerCase();
+        if (key === 'j') {
+          e.preventDefault();
+          scrollMessagesBy(120);
+          return;
+        }
+        if (key === 'k') {
+          e.preventDefault();
+          scrollMessagesBy(-120);
           return;
         }
       }
