@@ -453,7 +453,7 @@
         },
       });
 
-      topicSearchResults = Array.isArray(result?.results) ? result.results : [];
+      topicSearchResults = (Array.isArray(result?.results) ? result.results : []).slice().sort((a, b) => Number(b?.timestamp || 0) - Number(a?.timestamp || 0));
       topicSearchIndex = topicSearchResults.length ? 0 : -1;
       renderTopicSearchResults();
       updateTopicSearchCount();
