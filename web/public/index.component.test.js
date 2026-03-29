@@ -618,12 +618,14 @@ describe('web component behavior (index.html)', () => {
     await flush();
     await flush();
 
-    document.getElementById('main').dispatchEvent(new Event('mouseenter', { bubbles: true }));
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    window.__kpTest.setHoveredPane('right');
+    expect(document.body.dataset.hoverPane).toBe('right');
+
+    expect(window.__kpTest.openSearchByHoveredPane()).toBe('right');
     await flush();
     expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(true);
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    expect(window.__kpTest.openSearchByHoveredPane()).toBe('right');
     await flush();
     expect(document.getElementById('topic-search-panel').classList.contains('open')).toBe(false);
   });
@@ -632,6 +634,7 @@ describe('web component behavior (index.html)', () => {
     await boot({ view: makeView() });
 
     document.getElementById('sidebar').dispatchEvent(new Event('mouseenter', { bubbles: true }));
+    expect(document.body.dataset.hoverPane).toBe('left');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
     await flush();
 

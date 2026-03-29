@@ -1159,6 +1159,11 @@
       renderTopicTitleSearchResults();
     }
 
+    function setHoveredPane(pane) {
+      hoveredPane = pane || null;
+      document.body.dataset.hoverPane = hoveredPane || '';
+    }
+
     function renderTopicTitleSearchResults() {
       const topicList = document.getElementById('topic-list');
       if (!topicList) return;
@@ -1224,27 +1229,7 @@
       }
     }
 
-    function openSearchByHoveredPane() {
-      if (hoveredPane === 'left') {
-        if (!topicTitleSearchOpen) setTopicSearchOpen(false);
-        setTopicTitleSearchOpen(!topicTitleSearchOpen);
-        return;
-      }
-      if (hoveredPane === 'right') {
-        const nextOpen = !topicSearchOpen;
-        if (nextOpen) setTopicTitleSearchOpen(false);
-        setTopicSearchOpen(nextOpen);
-        if (nextOpen) {
-          const input = document.getElementById('topic-search-input');
-          input?.focus();
-          input?.select();
-        }
-        return;
-      }
-      if (topicTitleSearchOpen) {
-        setTopicTitleSearchOpen(false);
-        return;
-      }
+    function toggleMessageSearchFromShortcut() {
       const nextOpen = !topicSearchOpen;
       setTopicSearchOpen(nextOpen);
       if (nextOpen) {
@@ -1253,6 +1238,32 @@
         input?.select();
       }
     }
+
+    function openSearchByHoveredPane() {
+      const activeHoverPane = document.body?.dataset?.hoverPane || hoveredPane || null;
+      if (activeHoverPane === 'left') {
+        if (!topicTitleSearchOpen) setTopicSearchOpen(false);
+        setTopicTitleSearchOpen(!topicTitleSearchOpen);
+        return 'left';
+      }
+      if (activeHoverPane === 'right') {
+        if (!topicSearchOpen) setTopicTitleSearchOpen(false);
+        toggleMessageSearchFromShortcut();
+        return 'right';
+      }
+      if (topicTitleSearchOpen) {
+        setTopicTitleSearchOpen(false);
+        return 'left';
+      }
+      toggleMessageSearchFromShortcut();
+      return 'right';
+    }
+
+    window.__kpTest = Object.assign(window.__kpTest || {}, {
+      openSearchByHoveredPane,
+      toggleMessageSearchFromShortcut,
+      setHoveredPane,
+    });
 
     async function openTopicTitleSearchResult(item) {
       if (!item) return;
@@ -1790,16 +1801,16 @@
     };
 
     document.getElementById('sidebar').addEventListener('mouseenter', () => {
-      hoveredPane = 'left';
+      setHoveredPane('left');
     });
     document.getElementById('sidebar').addEventListener('mouseleave', () => {
-      if (hoveredPane === 'left') hoveredPane = null;
+      if (hoveredPane === 'left') setHoveredPane(null);
     });
     document.getElementById('main').addEventListener('mouseenter', () => {
-      hoveredPane = 'right';
+      setHoveredPane('right');
     });
     document.getElementById('main').addEventListener('mouseleave', () => {
-      if (hoveredPane === 'right') hoveredPane = null;
+      if (hoveredPane === 'right') setHoveredPane(null);
     });
 
     document.getElementById('topic-title-search-input').addEventListener('input', (e) => {
