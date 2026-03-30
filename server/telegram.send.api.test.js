@@ -49,6 +49,14 @@ describe('POST /api/telegram/send', () => {
       telegramMessageId: 2118,
       chatId: '-1003826585913',
       replyToId: null,
+      split: false,
+      chunkCount: 1,
+      chunks: [{
+        ok: true,
+        telegramMessageId: 2118,
+        chatId: '-1003826585913',
+        replyToId: null,
+      }],
     });
   });
 
@@ -73,6 +81,36 @@ describe('POST /api/telegram/send', () => {
       .send({ chatId: '-1003826585913', text: '   ' })
       .expect(400)
       .expect({ error: 'text required' });
+  });
+
+  it('auto-splits overlong telegram text into multiple sends', async () => {
+    mockSender.sendText
+      .mockResolvedValueOnce({ ok: true, telegramMessageId: 3001, chatId: '-1003826585913', replyToId: null })
+      .mockResolvedValueOnce({ ok: true, telegramMessageId: 3002, chatId: '-1003826585913', replyToId: 3001 });
+
+    const longText = `${'a'.repeat(4090)} ${'b'.repeat(20)}`;
+    const res = await request(app)
+      .post('/api/telegram/send')
+      .send({ chatId: '-1003826585913', text: longText })
+      .expect(200);
+
+    expect(mockSender.sendText).toHaveBeenCalledTimes(2);
+    expect(mockSender.sendText.mock.calls[0][0]).toEqual({
+      chatId: '-1003826585913',
+      text: expect.any(String),
+      replyToId: undefined,
+    });
+    expect(mockSender.sendText.mock.calls[0][0].text.length).toBeLessThanOrEqual(4096);
+    expect(mockSender.sendText.mock.calls[1][0]).toEqual({
+      chatId: '-1003826585913',
+      text: expect.any(String),
+      replyToId: 3001,
+    });
+    expect(mockSender.sendText.mock.calls[1][0].text.length).toBeLessThanOrEqual(4096);
+    expect(res.body.split).toBe(true);
+    expect(res.body.chunkCount).toBe(2);
+    expect(Array.isArray(res.body.chunks)).toBe(true);
+    expect(res.body.chunks).toHaveLength(2);
   });
 
   it('maps sender validation errors to 400', async () => {

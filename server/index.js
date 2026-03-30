@@ -350,6 +350,23 @@ app.post('/api/telegram/send-image', async (req, res) => {
   }
 });
 
+function splitTelegramText(text, maxLen = 4096) {
+  const input = String(text || '');
+  if (input.length <= maxLen) return [input];
+
+  const parts = [];
+  let remaining = input;
+  while (remaining.length > maxLen) {
+    let splitAt = remaining.lastIndexOf('\n', maxLen);
+    if (splitAt <= 0) splitAt = remaining.lastIndexOf(' ', maxLen);
+    if (splitAt <= 0) splitAt = maxLen;
+    parts.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  if (remaining.length) parts.push(remaining);
+  return parts.filter(Boolean);
+}
+
 /** Send telegram message (text only) */
 app.post('/api/telegram/send', async (req, res) => {
   try {
@@ -361,20 +378,33 @@ app.post('/api/telegram/send', async (req, res) => {
 
     if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
     if (!text || !String(text).trim()) return res.status(400).json({ error: 'text required' });
-    if (String(text).length > 4096) return res.status(400).json({ error: 'text too long (max 4096)' });
 
     const replyTopicId = Number(replyToId);
     if (Number.isFinite(replyTopicId) && db.isTelegramTopicDeleted(String(resolvedChatId), String(replyTopicId))) {
       return res.status(409).json({ error: 'topic is deleted on telegram; chat is read-only' });
     }
 
-    const result = await sender.sendText({
-      chatId: String(resolvedChatId),
-      text: String(text),
-      replyToId,
-    });
+    const chunks = splitTelegramText(String(text), 4096);
+    const results = [];
+    let chainedReplyToId = replyToId;
 
-    return res.json(result);
+    for (const chunk of chunks) {
+      const result = await sender.sendText({
+        chatId: String(resolvedChatId),
+        text: chunk,
+        replyToId: chainedReplyToId,
+      });
+      results.push(result);
+      chainedReplyToId = result?.telegramMessageId || chainedReplyToId;
+    }
+
+    const first = results[0] || null;
+    return res.json({
+      ...(first || { ok: true, chatId: String(resolvedChatId), replyToId: replyToId ?? null }),
+      split: chunks.length > 1,
+      chunkCount: chunks.length,
+      chunks: results,
+    });
   } catch (err) {
     const msg = String(err?.message || err);
     if (msg.includes('required') || msg.includes('must be a numeric')) {

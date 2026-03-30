@@ -541,6 +541,65 @@ describe('web component behavior (index.html)', () => {
     expect(sendCalls.length).toBe(1);
   });
 
+  it('shows a clear composer warning when message text exceeds 4096 chars', async () => {
+    await boot({ view: makeView() });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const channelSelect = document.getElementById('channel-select');
+    channelSelect.value = '55';
+    channelSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const input = document.getElementById('composer-input');
+    input.value = 'x'.repeat(4105);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+
+    expect(document.getElementById('composer-status').textContent).toContain('Telegram max is 4096');
+  });
+
+  it('shows split-send status after backend auto-splits long telegram text', async () => {
+    await boot({ view: makeView() });
+
+    window.fetch = jest.fn(async (url, opts = {}) => {
+      const u = String(url);
+      if (u.endsWith('/api/sources')) return { json: async () => ['telegram'] };
+      if (u.includes('/api/telegram/topics')) return { json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false, updatedAt: Date.now() }] };
+      if (u.includes('/api/topics/topic%3Atelegram%3A-100%3A55/view') || u.includes('/api/topics/topic:telegram:-100:55/view')) {
+        const view = makeView();
+        return { json: async () => ({ topic: { topicUUID: 'topic:telegram:-100:55', source: 'telegram', name: '[V1] Tennis Social Media App', locator: { chatId: '-1003826585913', topicId: '55', channel: '55' }, deletedAt: null }, tree: view.tree, currentLayerUuid: view.currentLayerUuid, state: view.state }) };
+      }
+      if (u.includes('/api/layers/status?')) return { json: async () => ({ ok: true, layers: {} }) };
+      if (u.endsWith('/api/telegram/send') && opts.method === 'POST') return { json: async () => ({ ok: true, split: true, chunkCount: 2, chunks: [{ telegramMessageId: 1 }, { telegramMessageId: 2 }] }) };
+      throw new Error(`Unexpected fetch URL: ${u}`);
+    });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const topicRow = document.querySelector('#topic-list .tree-node');
+    topicRow.click();
+    await flush();
+    await flush();
+
+    const input = document.getElementById('composer-input');
+    input.value = 'x'.repeat(4105);
+    document.getElementById('composer-send').click();
+    await flush();
+    await flush();
+
+    expect(document.getElementById('composer-status').textContent).toContain('Sent as 2 messages');
+  });
+
   it('keeps previously expanded tree branches when navigating to another layer', async () => {
     const view = {
       currentLayerUuid: 'A',
