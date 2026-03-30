@@ -1328,6 +1328,7 @@
       openSearchByHoveredPane,
       toggleMessageSearchFromShortcut,
       setHoveredPane,
+      normalizeRenderedLinks,
     });
 
     async function openTopicTitleSearchResult(item) {
@@ -1685,9 +1686,21 @@
       return enhanceCodeBlocks(DOMPurify.sanitize(raw));
     }
 
+    function normalizeRenderedLinks(html) {
+      if (!html) return html;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      wrap.querySelectorAll('a[href]').forEach((link) => {
+        if (link.classList.contains('back-link') || link.hasAttribute('onclick')) return;
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener noreferrer');
+      });
+      return wrap.innerHTML;
+    }
+
     function applyHighlightToRenderedHtml(html, query) {
       const q = String(query || '').trim();
-      if (!q || !html) return html;
+      if (!q || !html) return normalizeRenderedLinks(html);
       const wrap = document.createElement('div');
       wrap.innerHTML = html;
       const walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT, null);
@@ -1720,7 +1733,7 @@
         node.parentNode.replaceChild(frag, node);
       });
 
-      return wrap.innerHTML;
+      return normalizeRenderedLinks(wrap.innerHTML);
     }
 
     function renderRichContent(text, entities = null, { highlightQuery = '' } = {}) {
