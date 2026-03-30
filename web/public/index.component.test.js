@@ -37,7 +37,7 @@ function makeView({ empty = false, withBranch = false, withImage = false } = {})
   return { currentLayerUuid: 'A', tree, state: { layers } };
 }
 
-function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topic 55' }], searchResults = [] } = {}) {
+function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topic 55' }], searchResults = [], telegramTopics = null } = {}) {
   return jest.fn(async (url, opts = {}) => {
     const u = String(url);
 
@@ -45,7 +45,7 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
     if (u.endsWith('/api/sources/telegram/channels')) return { json: async () => channels };
     if (u.includes('/api/telegram/topics')) {
       return {
-        json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }],
+        json: async () => (telegramTopics || [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false, updatedAt: Date.now() }]),
       };
     }
     if (u.endsWith('/api/search/topics') && opts.method === 'POST') {
@@ -154,6 +154,46 @@ describe('web component behavior (index.html)', () => {
     const messages = document.querySelectorAll('#messages .msg');
     expect(messages.length).toBe(1);
     expect(messages[0].textContent).toContain('root msg');
+  });
+
+  it('filters topics by selected updated-at timespan with last week as default', async () => {
+    const now = Date.now();
+    await boot({
+      view: makeView(),
+      telegramTopics: [
+        { id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: 'Updated Yesterday', messageCount: 2, deletedAt: null, archived: false, updatedAt: now - (1 * 24 * 60 * 60 * 1000) },
+        { id: '56', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:56', name: 'Updated 20 Days Ago', messageCount: 3, deletedAt: null, archived: false, updatedAt: now - (20 * 24 * 60 * 60 * 1000) },
+        { id: '57', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:57', name: 'Updated 200 Days Ago', messageCount: 4, deletedAt: null, archived: false, updatedAt: now - (200 * 24 * 60 * 60 * 1000) },
+      ],
+    });
+
+    const sourceSelect = document.getElementById('source-select');
+    sourceSelect.value = 'telegram';
+    sourceSelect.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+
+    const timespan = document.getElementById('topics-timespan-select');
+    const topicList = document.getElementById('topic-list');
+
+    expect(timespan.value).toBe('week');
+    expect(topicList.textContent).toContain('Updated Yesterday');
+    expect(topicList.textContent).not.toContain('Updated 20 Days Ago');
+    expect(topicList.textContent).not.toContain('Updated 200 Days Ago');
+
+    timespan.value = 'month';
+    timespan.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+    expect(topicList.textContent).toContain('Updated Yesterday');
+    expect(topicList.textContent).toContain('Updated 20 Days Ago');
+    expect(topicList.textContent).not.toContain('Updated 200 Days Ago');
+
+    timespan.value = 'year';
+    timespan.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+    expect(topicList.textContent).toContain('Updated 200 Days Ago');
   });
 
   it('loads view when selecting channel from channel dropdown', async () => {
@@ -647,16 +687,15 @@ describe('web component behavior (index.html)', () => {
   it('toggles topic title search with command+f when hovering left pane', async () => {
     await boot({ view: makeView() });
 
-    document.getElementById('sidebar').dispatchEvent(new Event('mouseenter', { bubbles: true }));
+    window.__kpTest.setHoveredPane('left');
     expect(document.body.dataset.hoverPane).toBe('left');
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
-    await flush();
 
+    expect(window.__kpTest.openSearchByHoveredPane()).toBe('left');
+    await flush();
     expect(document.getElementById('topic-title-search-input').style.display).toBe('block');
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    expect(window.__kpTest.openSearchByHoveredPane()).toBe('left');
     await flush();
-
     expect(document.getElementById('topic-title-search-input').style.display).toBe('none');
   });
 
@@ -791,7 +830,7 @@ describe('web component behavior (index.html)', () => {
 
     const fetchMock = jest.fn()
       .mockResolvedValueOnce({ json: async () => ['telegram'] })
-      .mockResolvedValueOnce({ json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false }] })
+      .mockResolvedValueOnce({ json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false, updatedAt: Date.now() }] })
       .mockResolvedValueOnce({ json: async () => firstView })
       .mockResolvedValueOnce({ json: async () => ({ ok: true, layers: {} }) })
       .mockResolvedValueOnce({ json: async () => secondView })
