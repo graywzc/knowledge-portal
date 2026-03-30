@@ -171,11 +171,17 @@
     </div>
     <div>
       <div class="sidebar-row">
-        <div class="topics-tabs">
-          <h2 id="topics-tab-active" class="topics-tab active">TOPICS</h2>
-          <h2 id="topics-tab-archived" class="topics-tab">ARCHIVES</h2>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+          <div class="topics-tabs">
+            <h2 id="topics-tab-active" class="topics-tab active">TOPICS</h2>
+            <h2 id="topics-tab-archived" class="topics-tab">ARCHIVES</h2>
+          </div>
+          <select id="topics-timespan-select" style="width:auto; min-width:110px; padding:4px 8px; font-size:12px; margin-left:auto;">
+            <option value="week" selected>Last week</option>
+            <option value="month">Last month</option>
+            <option value="year">Last year</option>
+            <option value="all">All time</option>
+          </select>
           <button id="topic-title-search-toggle" class="sidebar-mini-btn" type="button" aria-label="Search topics">🔍</button>
           <button id="create-topic-btn" class="sidebar-mini-btn" type="button">+ Topic</button>
         </div>
@@ -263,6 +269,7 @@
     let topicTitleSearchResults = [];
     let topicTitleSearchOpen = false;
     let activeTopicSearchHighlight = null;
+    let topicsTimespanMode = 'week'; // week | month | year | all
     let hoveredPane = null;
     let topicsViewMode = 'active'; // active | archived
     let viewState = null;
@@ -546,6 +553,14 @@
       a.classList.toggle('active', topicsViewMode === 'active');
       b.classList.toggle('active', topicsViewMode === 'archived');
       createBtn.style.display = topicsViewMode === 'archived' ? 'none' : 'inline-block';
+    }
+
+    function topicsTimespanCutoffMs() {
+      const now = Date.now();
+      if (topicsTimespanMode === 'week') return now - (7 * 24 * 60 * 60 * 1000);
+      if (topicsTimespanMode === 'month') return now - (30 * 24 * 60 * 60 * 1000);
+      if (topicsTimespanMode === 'year') return now - (365 * 24 * 60 * 60 * 1000);
+      return null;
     }
 
     function markLayerWip(topicId, layerUuid, ttlMs = 30000) {
@@ -1051,6 +1066,10 @@
         const fetched = await api('GET', `/telegram/topics?includeArchived=true`);
         let topics = Array.isArray(fetched) ? [...fetched] : [];
         topics = topics.filter(t => topicsViewMode === 'archived' ? !!t.archived : !t.archived);
+        const cutoffMs = topicsTimespanCutoffMs();
+        if (cutoffMs != null) {
+          topics = topics.filter((t) => Number(t.updatedAt || t.lastTimestamp || t.createdAt || 0) >= cutoffMs);
+        }
 
         // Merge locally-created topics that may not be ingested yet.
         for (const [id, t] of pendingTopics.entries()) {
@@ -1816,6 +1835,11 @@
       setTopicsViewMode('archived');
       if (currentSource === 'telegram') await loadChannels('telegram');
     };
+
+    document.getElementById('topics-timespan-select').addEventListener('change', async (e) => {
+      topicsTimespanMode = String(e.target.value || 'week');
+      if (currentSource === 'telegram') await loadChannels('telegram');
+    });
 
     document.getElementById('image-lightbox-backdrop').addEventListener('click', closeImageLightbox);
     document.getElementById('image-lightbox-close').addEventListener('click', closeImageLightbox);
