@@ -150,6 +150,9 @@
     #composer-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; font-size: 14px; min-height: 44px; resize: none; overflow-y: hidden; }
     #composer-send { padding: 10px 14px; border: 1px solid #4a6cf7; border-radius: 10px; background: #4a6cf7; color: #fff; font-weight: 600; cursor: pointer; }
     #composer-send:disabled { opacity: 0.6; cursor: not-allowed; }
+    #composer-status { font-size: 12px; color: #6b7280; margin-top: 6px; min-height: 16px; }
+    #composer-status.error { color: #c62828; }
+    #composer-status.warn { color: #8a5a00; }
 
     #msg-context-menu, #topic-context-menu, #layer-context-menu { position: fixed; display: none; z-index: 9999; min-width: 120px; background: #fff; border: 1px solid #d8deea; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.16); padding: 4px; }
     #msg-context-menu button, #topic-context-menu button, #layer-context-menu button { width: 100%; border: none; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
@@ -230,6 +233,7 @@
         <textarea id="composer-input" placeholder="Send a message to Telegram…"></textarea>
         <button id="composer-send" type="button">Send</button>
       </div>
+      <div id="composer-status"></div>
     </div>
   </div>
   <div id="msg-context-menu">
@@ -543,6 +547,29 @@
       const len = topicSearchResults.length;
       const next = (topicSearchIndex + delta + len) % len;
       navigateTopicSearchResult(next);
+    }
+
+    function setComposerStatus(message = '', kind = '') {
+      const el = document.getElementById('composer-status');
+      if (!el) return;
+      el.textContent = message || '';
+      el.className = '';
+      if (kind) el.classList.add(kind);
+    }
+
+    function updateComposerLengthStatus() {
+      const input = document.getElementById('composer-input');
+      const text = String(input?.value || '').trim();
+      if (!text) {
+        setComposerStatus('', '');
+        return;
+      }
+      if (text.length > 4096) {
+        const extra = text.length - 4096;
+        setComposerStatus(`Message is ${text.length} chars. Telegram max is 4096; it will be split into multiple messages (${extra} over).`, 'warn');
+        return;
+      }
+      setComposerStatus(`${text.length}/4096`, '');
     }
 
     function setTopicsViewMode(mode) {
@@ -890,11 +917,19 @@
         markLayerWip(currentChannel, currentLayerUuid);
         input.value = '';
         autoGrowComposerInput();
+        updateComposerLengthStatus();
         clearPendingImage();
         setReplyTarget(null);
+        if (result?.split) {
+          setComposerStatus(`Sent as ${result.chunkCount} messages because Telegram max is 4096 chars.`, 'warn');
+        } else {
+          setComposerStatus('', '');
+        }
         await loadCurrentTopicView();
       } catch (e) {
-        alert('Send failed. Please try again.');
+        const msg = String(e?.message || 'Send failed. Please try again.');
+        setComposerStatus(msg, 'error');
+        alert(msg);
       } finally {
         isSending = false;
         btn.disabled = false;
@@ -2000,7 +2035,10 @@
     document.getElementById('composer-send').onclick = sendCurrentMessage;
     document.getElementById('image-preview-remove').onclick = clearPendingImage;
 
-    document.getElementById('composer-input').addEventListener('input', autoGrowComposerInput);
+    document.getElementById('composer-input').addEventListener('input', () => {
+      autoGrowComposerInput();
+      updateComposerLengthStatus();
+    });
     document.getElementById('composer-input').addEventListener('paste', (e) => {
       const items = e.clipboardData?.items || [];
       for (const item of items) {
