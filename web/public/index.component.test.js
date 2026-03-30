@@ -7,7 +7,7 @@ function flush() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function makeView({ empty = false, withBranch = false, withImage = false } = {}) {
+function makeView({ empty = false, withBranch = false, withImage = false, rootContent = null } = {}) {
   const layerA = {
     id: 'A',
     parentLayerUuid: null,
@@ -16,7 +16,7 @@ function makeView({ empty = false, withBranch = false, withImage = false } = {})
       ? []
       : [withImage
         ? { id: 'tg:-100:1', sender: 'self', content: '[media]', contentType: 'image', mediaPath: 'telegram/-100/55/1.jpg', timestamp: 1700000000000 }
-        : { id: 'tg:-100:1', sender: 'self', content: 'root msg', timestamp: 1700000000000 }],
+        : { id: 'tg:-100:1', sender: 'self', content: rootContent || 'root msg', timestamp: 1700000000000 }],
     children: withBranch ? [{ layerUuid: 'B', branchFromMessageId: 'tg:-100:1' }] : [],
   };
 
@@ -334,6 +334,19 @@ describe('web component behavior (index.html)', () => {
     expect(lightbox.classList.contains('open')).toBe(true);
     expect(lightbox.getAttribute('aria-hidden')).toBe('false');
     expect(lightboxImg.getAttribute('src')).toContain('/media/telegram/-100/55/1.jpg');
+  });
+
+  it('normalizes rendered message links to open in a new tab by default', async () => {
+    await boot({ view: makeView() });
+
+    const normalized = window.__kpTest.normalizeRenderedLinks('<p><a href="https://example.com/docs">docs</a></p>');
+    const wrap = document.createElement('div');
+    wrap.innerHTML = normalized;
+
+    const link = wrap.querySelector('a[href="https://example.com/docs"]');
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it('closes lightbox on Escape', async () => {
