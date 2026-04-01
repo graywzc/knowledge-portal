@@ -3,6 +3,8 @@ const fs = require('fs');
 const mockDbPrepareGet = jest.fn();
 const mockDbPrepareRun = jest.fn();
 const mockInsertMessage = jest.fn();
+const mockGetMessage = jest.fn();
+const mockDeleteMessage = jest.fn();
 
 jest.mock('../db/Database', () => ({
   Database: jest.fn().mockImplementation(() => ({
@@ -14,6 +16,8 @@ jest.mock('../db/Database', () => ({
       }),
     },
     insertMessage: mockInsertMessage,
+    getMessage: mockGetMessage,
+    deleteMessage: mockDeleteMessage,
   })),
 }));
 
@@ -44,6 +48,8 @@ describe('TelegramUserIngestor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDbPrepareGet.mockReturnValue(null);
+    mockGetMessage.mockReturnValue(null);
+    mockDeleteMessage.mockReturnValue({ changes: 0 });
     mockIterMessagesImpl = async function* () {};
     mockDownloadMedia.mockResolvedValue(undefined);
   });
@@ -127,6 +133,71 @@ describe('TelegramUserIngestor', () => {
 
     const out = await ing.syncOnce({ backfillLimit: 0, replayBuffer: 0 });
     expect(out.ingested).toBe(1);
+  });
+
+  it('deletes the immediately previous phantom telegram duplicate when all narrow conditions match', async () => {
+    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    const ing = new TelegramUserIngestor({ apiId: '1', apiHash: 'h', phone: '+1', dbPath: '/tmp/x.db', chatId: '-1003826585913' });
+    mockGetEntity.mockResolvedValue({ id: 'chat' });
+    mockDbPrepareGet.mockReturnValue({ value: '4768' });
+    mockGetMessage.mockReturnValue({
+      id: 'tg:-1003826585913:4768',
+      source: 'telegram',
+      channel: '3266',
+      sender_id: '8385354077',
+      reply_to_id: 'tg:-1003826585913:4767',
+      timestamp: 1775070072000,
+      content: 'same content',
+      raw_meta: JSON.stringify({ id: 4768, chat_id: '-1003826585913', topic_id: '3266' }),
+    });
+
+    mockIterMessagesImpl = async function* () {
+      yield {
+        id: 4769,
+        chatId: '-1003826585913',
+        senderId: '8385354077',
+        message: 'same content',
+        date: 1775070073,
+        replyTo: { replyToMsgId: 4767, replyToTopId: 3266, forumTopic: true },
+      };
+    };
+
+    const out = await ing.syncOnce({ backfillLimit: 200, replayBuffer: 30 });
+    expect(out.ingested).toBe(1);
+    expect(mockInsertMessage).toHaveBeenCalledTimes(1);
+    expect(mockGetMessage).toHaveBeenCalledWith('tg:-1003826585913:4768');
+    expect(mockDeleteMessage).toHaveBeenCalledWith('tg:-1003826585913:4768');
+  });
+
+  it('does not delete previous message when identical content comes from a different sender', async () => {
+    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    const ing = new TelegramUserIngestor({ apiId: '1', apiHash: 'h', phone: '+1', dbPath: '/tmp/x.db', chatId: '-1003826585913' });
+    mockGetEntity.mockResolvedValue({ id: 'chat' });
+    mockDbPrepareGet.mockReturnValue({ value: '4768' });
+    mockGetMessage.mockReturnValue({
+      id: 'tg:-1003826585913:4768',
+      source: 'telegram',
+      channel: '3266',
+      sender_id: 'someone-else',
+      reply_to_id: 'tg:-1003826585913:4767',
+      timestamp: 1775070072000,
+      content: 'same content',
+      raw_meta: JSON.stringify({ id: 4768, chat_id: '-1003826585913', topic_id: '3266' }),
+    });
+
+    mockIterMessagesImpl = async function* () {
+      yield {
+        id: 4769,
+        chatId: '-1003826585913',
+        senderId: '8385354077',
+        message: 'same content',
+        date: 1775070073,
+        replyTo: { replyToMsgId: 4767, replyToTopId: 3266, forumTopic: true },
+      };
+    };
+
+    await ing.syncOnce({ backfillLimit: 200, replayBuffer: 30 });
+    expect(mockDeleteMessage).not.toHaveBeenCalled();
   });
 
   it('runLoop executes sync and breaks on timer error', async () => {
