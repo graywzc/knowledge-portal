@@ -157,6 +157,52 @@ class TelegramUserIngestor {
     };
   }
 
+  #normalizeContent(text) {
+    return String(text || '').replace(/\r\n/g, '\n').trim();
+  }
+
+  #shouldDeletePreviousDuplicate(currentMsg, previousRow) {
+    if (!currentMsg || !previousRow) return false;
+    if (String(currentMsg.source) !== 'telegram') return false;
+    if (String(previousRow.source || '') !== 'telegram') return false;
+    if (String(previousRow.id || '') === String(currentMsg.id || '')) return false;
+
+    const currentMeta = currentMsg.rawMeta || {};
+    let previousMeta = null;
+    try {
+      previousMeta = typeof previousRow.raw_meta === 'string' ? JSON.parse(previousRow.raw_meta) : (previousRow.raw_meta || null);
+    } catch {
+      previousMeta = null;
+    }
+
+    const currentTelegramId = Number(currentMeta.id);
+    const previousTelegramId = Number(previousMeta?.id || String(previousRow.id || '').split(':').pop());
+    if (!Number.isFinite(currentTelegramId) || !Number.isFinite(previousTelegramId)) return false;
+    if (previousTelegramId !== currentTelegramId - 1) return false;
+
+    if (String(previousRow.channel || '') !== String(currentMsg.channel || '')) return false;
+    if (String(previousRow.sender_id || '') !== String(currentMsg.senderId || '')) return false;
+    if (String(previousRow.reply_to_id || '') !== String(currentMsg.replyToId || '')) return false;
+
+    const currentChatId = String(currentMsg.chatId || currentMeta.chat_id || '');
+    const previousChatId = String(previousMeta?.chat_id || '');
+    if (previousChatId && currentChatId && previousChatId !== currentChatId) return false;
+
+    const currentTopicId = String(currentMsg.topicId || currentMeta.topic_id || '');
+    const previousTopicId = String(previousMeta?.topic_id || '');
+    if (previousTopicId !== currentTopicId) return false;
+
+    const currentContent = this.#normalizeContent(currentMsg.content);
+    const previousContent = this.#normalizeContent(previousRow.content);
+    if (!currentContent || currentContent !== previousContent) return false;
+
+    const currentTs = Number(currentMsg.timestamp);
+    const previousTs = Number(previousRow.timestamp);
+    if (Number.isFinite(currentTs) && Number.isFinite(previousTs) && Math.abs(currentTs - previousTs) > 30000) return false;
+
+    return true;
+  }
+
   async syncOnce({ backfillLimit = 200, replayBuffer = 30 } = {}) {
     const entity = await this.client.getEntity(this.chatId);
     const lastId = this.#getLastId();
@@ -183,6 +229,15 @@ class TelegramUserIngestor {
       let dbMsg = this.#toDbMessage(msg);
       dbMsg = await this.#attachImageMedia(dbMsg, msg);
       this.db.insertMessage(dbMsg);
+
+      const previousId = Number(msg.id) - 1;
+      if (Number.isFinite(previousId) && previousId > 0 && typeof this.db.getMessage === 'function' && typeof this.db.deleteMessage === 'function') {
+        const previousRow = this.db.getMessage(`tg:${dbMsg.chatId}:${previousId}`);
+        if (this.#shouldDeletePreviousDuplicate(dbMsg, previousRow)) {
+          this.db.deleteMessage(previousRow.id);
+        }
+      }
+
       ingested++;
       if (msg.id > maxSeen) maxSeen = msg.id;
     }

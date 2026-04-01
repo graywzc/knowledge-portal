@@ -62,7 +62,30 @@ Use this to inspect the exact MTProto payload for a specific message id (helpful
 node scripts/fetch-telegram-msg.js -1003826585913 1623
 ```
 
-### D) Debug utility: test Telegram sendText from CLI
+### D) Debug utility: inspect stored messages in SQLite
+Use this to verify whether a Telegram message id exists in KP storage and inspect its row.
+
+For the local dev app, messages are typically stored in `data/dev.db`.
+
+Search by full normalized id:
+
+```bash
+sqlite3 data/dev.db "SELECT id, source, channel, sender_id, reply_to_id, timestamp, substr(content,1,200) AS preview FROM messages WHERE id = 'tg:-1003826585913:1623';"
+```
+
+Search by Telegram numeric message id suffix:
+
+```bash
+sqlite3 data/dev.db "SELECT id, source, channel, sender_id, reply_to_id, timestamp, substr(content,1,200) AS preview FROM messages WHERE id LIKE 'tg:%:1623' ORDER BY timestamp DESC;"
+```
+
+Inspect full raw metadata for one row:
+
+```bash
+sqlite3 data/dev.db "SELECT id, raw_meta FROM messages WHERE id = 'tg:-1003826585913:1623';"
+```
+
+### E) Debug utility: test Telegram sendText from CLI
 Sends a real Telegram message using `TelegramSender`.
 
 ```bash

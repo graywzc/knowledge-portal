@@ -211,6 +211,13 @@ class Database {
   }
 
   /**
+   * Delete a message by id.
+   */
+  deleteMessage(id) {
+    return this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
+  }
+
+  /**
    * List distinct channels/scopes for a source.
    */
   getChannels(source) {

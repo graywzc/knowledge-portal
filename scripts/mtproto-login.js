@@ -4,6 +4,9 @@ const path = require('path');
 const input = require('input');
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+const { loadEnv } = require('./load-env');
+
+loadEnv(process.cwd());
 
 (async () => {
   const apiId = Number(process.env.TG_API_ID || process.env.TELEGRAM_API_ID);
