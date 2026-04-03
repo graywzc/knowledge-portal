@@ -1851,15 +1851,13 @@
       closeContextMenu();
       if (!target) return;
       const currentShort = getShortChatId(target.id);
-      const input = window.prompt(`Change reply-to for message #${currentShort}\nEnter new reply-to message ID (short number), or leave blank to clear:`);
+      const input = window.prompt(`Change reply-to for message #${currentShort}\nEnter new reply-to message ID (short number):`);
       if (input === null) return; // cancelled
       const trimmed = input.trim();
-      let newReplyToId = null;
-      if (trimmed) {
-        // Build full prefixed ID by replacing the last segment of the current message's ID
-        const prefix = target.id.slice(0, target.id.lastIndexOf(':') + 1);
-        newReplyToId = prefix ? prefix + trimmed : trimmed;
-      }
+      if (!trimmed) { alert('Reply-to ID cannot be blank.'); return; }
+      // Build full prefixed ID by replacing the last segment of the current message's ID
+      const prefix = target.id.slice(0, target.id.lastIndexOf(':') + 1);
+      const newReplyToId = prefix ? prefix + trimmed : trimmed;
       try {
         const result = await api('PATCH', `/messages/${encodeURIComponent(target.id)}/reply-to`, { newReplyToId });
         if (result?.error) throw new Error(result.error);
