@@ -747,8 +747,12 @@
 
       const menu = document.getElementById('layer-context-menu');
       menu.style.display = 'block';
-      menu.style.left = `${x}px`;
-      menu.style.top = `${y}px`;
+      const mw = menu.offsetWidth || 160;
+      const mh = menu.offsetHeight || 80;
+      const cx = (x + mw > window.innerWidth) ? window.innerWidth - mw - 8 : x;
+      const cy = (y + mh > window.innerHeight) ? window.innerHeight - mh - 8 : y;
+      menu.style.left = `${cx}px`;
+      menu.style.top = `${cy}px`;
     }
 
     function closeLayerContextMenu() {
