@@ -55,6 +55,7 @@ class Database {
     if (!cols.includes('media_width')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_width INTEGER`);
     if (!cols.includes('media_height')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_height INTEGER`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_scope ON messages(source, chat_id, topic_id)`);
+    if (!cols.includes('reply_to_locked')) this.db.exec(`ALTER TABLE messages ADD COLUMN reply_to_locked INTEGER NOT NULL DEFAULT 0`);
 
     const layerCols = this.db.prepare(`PRAGMA table_info(layers)`).all().map(c => c.name);
     if (!layerCols.includes('title')) this.db.exec(`ALTER TABLE layers ADD COLUMN title TEXT`);
@@ -127,12 +128,12 @@ class Database {
       INSERT INTO messages (id, source, channel, chat_id, topic_id, sender_id, sender_name, sender_role, reply_to_id, content, content_type, media_path, media_mime, media_size, media_width, media_height, timestamp, raw_meta)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
-        channel      = COALESCE(excluded.channel, messages.channel),
-        chat_id      = COALESCE(messages.chat_id, excluded.chat_id),
-        topic_id     = COALESCE(messages.topic_id, excluded.topic_id),
+        channel      = CASE WHEN messages.reply_to_locked THEN messages.channel ELSE COALESCE(excluded.channel, messages.channel) END,
+        chat_id      = CASE WHEN messages.reply_to_locked THEN messages.chat_id ELSE COALESCE(messages.chat_id, excluded.chat_id) END,
+        topic_id     = CASE WHEN messages.reply_to_locked THEN messages.topic_id ELSE COALESCE(messages.topic_id, excluded.topic_id) END,
         sender_name  = COALESCE(excluded.sender_name, messages.sender_name),
         sender_role  = COALESCE(excluded.sender_role, messages.sender_role),
-        reply_to_id  = COALESCE(excluded.reply_to_id, messages.reply_to_id),
+        reply_to_id  = CASE WHEN messages.reply_to_locked THEN messages.reply_to_id ELSE COALESCE(excluded.reply_to_id, messages.reply_to_id) END,
         content      = COALESCE(excluded.content, messages.content),
         content_type = COALESCE(excluded.content_type, messages.content_type),
         media_path   = COALESCE(excluded.media_path, messages.media_path),
@@ -176,6 +177,33 @@ class Database {
     });
 
     return inserted;
+  }
+
+  updateReplyTo(id, newReplyToId) {
+    // Re-scope to the target message's channel/topic so it appears in the right topic view.
+    const target = newReplyToId ? this.db.prepare('SELECT channel, chat_id, topic_id FROM messages WHERE id = ?').get(newReplyToId) : null;
+    if (target) {
+      const rescope = this.db.prepare(
+        'UPDATE messages SET channel = ?, chat_id = ?, topic_id = ? WHERE id = ?'
+      );
+      // Update the message itself with the new reply_to and lock it.
+      this.db.prepare(
+        'UPDATE messages SET reply_to_id = ?, reply_to_locked = 1, channel = ?, chat_id = ?, topic_id = ? WHERE id = ?'
+      ).run(newReplyToId, target.channel, target.chat_id, target.topic_id, id);
+      // Cascade re-scope to all downstream replies (BFS).
+      const getReplies = this.db.prepare('SELECT id FROM messages WHERE reply_to_id = ?');
+      const queue = [id];
+      while (queue.length) {
+        const current = queue.shift();
+        const replies = getReplies.all(current);
+        for (const r of replies) {
+          rescope.run(target.channel, target.chat_id, target.topic_id, r.id);
+          queue.push(r.id);
+        }
+      }
+      return { changes: 1 };
+    }
+    return this.db.prepare('UPDATE messages SET reply_to_id = ?, reply_to_locked = 1 WHERE id = ?').run(newReplyToId || null, id);
   }
 
   /**

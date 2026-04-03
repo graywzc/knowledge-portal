@@ -206,6 +206,15 @@ app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
   res.json(db.getMessages(req.params.source, req.params.channel));
 });
 
+app.patch('/api/messages/:id/reply-to', (req, res) => {
+  const id = decodeURIComponent(req.params.id);
+  const { newReplyToId } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'id required' });
+  const result = db.updateReplyTo(id, newReplyToId || null);
+  if (result.changes === 0) return res.status(404).json({ error: 'message not found' });
+  res.json({ ok: true });
+});
+
 /** Realtime stream for one source/channel (SSE) */
 app.get('/api/stream', (req, res) => {
   const source = String(req.query.source || '');

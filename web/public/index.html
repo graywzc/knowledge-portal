@@ -247,6 +247,7 @@
   </div>
   <div id="msg-context-menu">
     <button id="ctx-reply-btn" type="button">Reply</button>
+    <button id="ctx-change-reply-to-btn" type="button">Change reply-to…</button>
   </div>
   <div id="topic-context-menu">
     <button id="ctx-hide-topic-btn" type="button">Archive Topic</button>
@@ -1843,6 +1844,27 @@
     document.getElementById('ctx-reply-btn').onclick = () => {
       if (contextTarget) setReplyTarget(contextTarget);
       closeContextMenu();
+    };
+
+    document.getElementById('ctx-change-reply-to-btn').onclick = async () => {
+      const target = contextTarget;
+      closeContextMenu();
+      if (!target) return;
+      const currentShort = getShortChatId(target.id);
+      const input = window.prompt(`Change reply-to for message #${currentShort}\nEnter new reply-to message ID (short number):`);
+      if (input === null) return; // cancelled
+      const trimmed = input.trim();
+      if (!trimmed) { alert('Reply-to ID cannot be blank.'); return; }
+      // Build full prefixed ID by replacing the last segment of the current message's ID
+      const prefix = target.id.slice(0, target.id.lastIndexOf(':') + 1);
+      const newReplyToId = prefix ? prefix + trimmed : trimmed;
+      try {
+        const result = await api('PATCH', `/messages/${encodeURIComponent(target.id)}/reply-to`, { newReplyToId });
+        if (result?.error) throw new Error(result.error);
+        await loadCurrentTopicView();
+      } catch (e) {
+        alert('Failed to update reply-to: ' + e.message);
+      }
     };
 
     document.getElementById('ctx-hide-topic-btn').onclick = async () => {
