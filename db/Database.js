@@ -55,6 +55,7 @@ class Database {
     if (!cols.includes('media_width')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_width INTEGER`);
     if (!cols.includes('media_height')) this.db.exec(`ALTER TABLE messages ADD COLUMN media_height INTEGER`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_scope ON messages(source, chat_id, topic_id)`);
+    if (!cols.includes('reply_to_locked')) this.db.exec(`ALTER TABLE messages ADD COLUMN reply_to_locked INTEGER NOT NULL DEFAULT 0`);
 
     const layerCols = this.db.prepare(`PRAGMA table_info(layers)`).all().map(c => c.name);
     if (!layerCols.includes('title')) this.db.exec(`ALTER TABLE layers ADD COLUMN title TEXT`);
@@ -132,7 +133,7 @@ class Database {
         topic_id     = COALESCE(messages.topic_id, excluded.topic_id),
         sender_name  = COALESCE(excluded.sender_name, messages.sender_name),
         sender_role  = COALESCE(excluded.sender_role, messages.sender_role),
-        reply_to_id  = COALESCE(excluded.reply_to_id, messages.reply_to_id),
+        reply_to_id  = CASE WHEN messages.reply_to_locked THEN messages.reply_to_id ELSE COALESCE(excluded.reply_to_id, messages.reply_to_id) END,
         content      = COALESCE(excluded.content, messages.content),
         content_type = COALESCE(excluded.content_type, messages.content_type),
         media_path   = COALESCE(excluded.media_path, messages.media_path),
@@ -179,7 +180,7 @@ class Database {
   }
 
   updateReplyTo(id, newReplyToId) {
-    return this.db.prepare('UPDATE messages SET reply_to_id = ? WHERE id = ?').run(newReplyToId || null, id);
+    return this.db.prepare('UPDATE messages SET reply_to_id = ?, reply_to_locked = 1 WHERE id = ?').run(newReplyToId || null, id);
   }
 
   /**
