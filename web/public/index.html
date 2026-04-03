@@ -161,6 +161,14 @@
     body.dark #composer { background: #161a22; border-top-color: #2a2f3a; }
     body.dark #reply-banner { color: #d7e6ff; background: #243753; border-color: #345179; }
     body.dark #composer-input { background: #0f1115; color: #e8eaed; border-color: #2f3644; }
+    #dictate-btn { padding: 10px 12px; border: 1px solid #cfd6e6; border-radius: 10px; background: #fff; color: #243b63; font-size: 16px; cursor: pointer; line-height: 1; flex-shrink: 0; }
+    #dictate-btn:hover { background: #eef4ff; }
+    #dictate-btn.recording { border-color: #e53e3e; background: #fff5f5; color: #e53e3e; animation: micPulse 1s ease-in-out infinite; }
+    #dictate-btn:disabled { opacity: 0.4; cursor: not-allowed; animation: none; }
+    @keyframes micPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229,62,62,0.4); } 50% { box-shadow: 0 0 0 6px rgba(229,62,62,0); } }
+    body.dark #dictate-btn { background: #1a1f29; color: #dbe7ff; border-color: #2f3644; }
+    body.dark #dictate-btn:hover { background: #243047; }
+    body.dark #dictate-btn.recording { border-color: #fc8181; background: #2d1a1a; color: #fc8181; }
     body.dark #msg-context-menu, body.dark #topic-context-menu, body.dark #layer-context-menu { background: #1a1f29; border-color: #2f3644; }
     body.dark #msg-context-menu button, body.dark #topic-context-menu button, body.dark #layer-context-menu button { color: #e8eaed; }
     body.dark #msg-context-menu button:hover, body.dark #topic-context-menu button:hover, body.dark #layer-context-menu button:hover { background: #2a3344; }
@@ -231,6 +239,7 @@
       </div>
       <div id="composer-row">
         <textarea id="composer-input" placeholder="Send a message to Telegram…"></textarea>
+        <button id="dictate-btn" type="button" title="Dictate (click to start/stop)">🎤</button>
         <button id="composer-send" type="button">Send</button>
       </div>
       <div id="composer-status"></div>
@@ -2031,6 +2040,78 @@
         else moveTopicSearch(1);
       }
     });
+
+    // Dictation via Web Speech API
+    (function initDictation() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const btn = document.getElementById('dictate-btn');
+      if (!SpeechRecognition) { btn.disabled = true; btn.title = 'Speech recognition not supported in this browser'; return; }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      let isListening = false;
+      let committedText = '';
+
+      function startDictation() {
+        const input = document.getElementById('composer-input');
+        committedText = input.value;
+        recognition.start();
+        isListening = true;
+        btn.classList.add('recording');
+        btn.title = 'Dictating… click to stop';
+      }
+
+      function stopDictation() {
+        recognition.stop();
+      }
+
+      function toggleDictation() {
+        if (isListening) stopDictation();
+        else startDictation();
+      }
+
+      btn.addEventListener('click', toggleDictation);
+
+      document.addEventListener('keydown', (e) => {
+        if (e.altKey && e.code === 'Space') {
+          e.preventDefault();
+          toggleDictation();
+        }
+      });
+
+      recognition.addEventListener('result', (e) => {
+        const input = document.getElementById('composer-input');
+        let transcript = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) transcript += e.results[i][0].transcript;
+        }
+        if (transcript) {
+          const sep = committedText && !committedText.endsWith(' ') ? ' ' : '';
+          committedText = committedText + sep + transcript.trim();
+          input.value = committedText;
+          autoGrowComposerInput();
+          updateComposerLengthStatus();
+        }
+      });
+
+      recognition.addEventListener('end', () => {
+        isListening = false;
+        btn.classList.remove('recording');
+        btn.title = 'Dictate (click to start/stop)';
+      });
+
+      recognition.addEventListener('error', (e) => {
+        isListening = false;
+        btn.classList.remove('recording');
+        btn.title = 'Dictate (click to start/stop)';
+        if (e.error !== 'no-speech' && e.error !== 'aborted') {
+          setComposerStatus('Dictation error: ' + e.error, 'error');
+        }
+      });
+    })();
 
     document.getElementById('composer-send').onclick = sendCurrentMessage;
     document.getElementById('image-preview-remove').onclick = clearPendingImage;
