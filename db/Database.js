@@ -180,6 +180,13 @@ class Database {
   }
 
   updateReplyTo(id, newReplyToId) {
+    // Re-scope to the target message's channel/topic so it appears in the right topic view.
+    const target = newReplyToId ? this.db.prepare('SELECT channel, chat_id, topic_id FROM messages WHERE id = ?').get(newReplyToId) : null;
+    if (target) {
+      return this.db.prepare(
+        'UPDATE messages SET reply_to_id = ?, reply_to_locked = 1, channel = ?, chat_id = ?, topic_id = ? WHERE id = ?'
+      ).run(newReplyToId, target.channel, target.chat_id, target.topic_id, id);
+    }
     return this.db.prepare('UPDATE messages SET reply_to_id = ?, reply_to_locked = 1 WHERE id = ?').run(newReplyToId || null, id);
   }
 
