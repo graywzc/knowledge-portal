@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { TelegramClient, Api } = require('telegram');
+const { CustomFile } = require('telegram/client/uploads');
 const { StringSession } = require('telegram/sessions');
 
 class TelegramSender {
@@ -136,6 +137,91 @@ class TelegramSender {
       };
     } finally {
       try { fs.unlinkSync(tmpPath); } catch (_) {}
+    }
+  }
+
+  async sendImages({ chatId, images, replyToId } = {}) {
+    if (!chatId) throw new Error('chatId required');
+    if (!Array.isArray(images) || images.length === 0) throw new Error('images required');
+
+    await this.#ensureClient();
+
+    const entity = await this.client.getEntity(String(chatId));
+    const resolvedReplyTo = (replyToId === undefined || replyToId === null || replyToId === '')
+      ? null
+      : Number(replyToId);
+    if (resolvedReplyTo !== null && !Number.isFinite(resolvedReplyTo)) {
+      throw new Error('replyToId must be a numeric Telegram message id');
+    }
+
+    // Single image: use sendFile directly
+    if (images.length === 1) {
+      const { buffer, mimeType, caption } = images[0];
+      const ext = mimeType.includes('jpeg') ? 'jpg' : (mimeType.split('/')[1] || 'png');
+      const tmpPath = path.join(process.cwd(), `data/tmp-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`);
+      fs.mkdirSync(path.dirname(tmpPath), { recursive: true });
+      fs.writeFileSync(tmpPath, buffer);
+      try {
+        const payload = { file: tmpPath, caption: String(caption || '') };
+        if (resolvedReplyTo) payload.replyTo = resolvedReplyTo;
+        const sent = await this.client.sendFile(entity, payload);
+        return { ok: true, chatId: String(chatId), results: [{ ok: true, telegramMessageId: Number(sent?.id) }] };
+      } finally {
+        try { fs.unlinkSync(tmpPath); } catch (_) {}
+      }
+    }
+
+    // Multiple images: upload individually then send as a media group (album)
+    {
+      const multiMedia = [];
+      for (let i = 0; i < images.length; i++) {
+        const { buffer, mimeType, caption } = images[i];
+        const ext = mimeType.includes('jpeg') ? 'jpg' : (mimeType.split('/')[1] || 'png');
+        const customFile = new CustomFile(`image${i}.${ext}`, buffer.length, '', buffer);
+        const inputFile = await this.client.uploadFile({ file: customFile, workers: 1 });
+
+        // Finalize the upload into a referenceable Telegram media object
+        const uploaded = await this.client.invoke(new Api.messages.UploadMedia({
+          peer: entity,
+          media: new Api.InputMediaUploadedPhoto({ file: inputFile }),
+        }));
+        const photo = uploaded.photo;
+        const inputMedia = new Api.InputMediaPhoto({
+          id: new Api.InputPhoto({
+            id: photo.id,
+            accessHash: photo.accessHash,
+            fileReference: photo.fileReference,
+          }),
+        });
+
+        multiMedia.push(new Api.InputSingleMedia({
+          media: inputMedia,
+          randomId: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
+          message: i === 0 ? String(caption || '') : '',
+          entities: [],
+        }));
+      }
+
+      const sendPayload = { peer: entity, multiMedia };
+      if (resolvedReplyTo) {
+        sendPayload.replyTo = new Api.InputReplyToMessage({ replyToMsgId: resolvedReplyTo });
+      }
+
+      const result = await this.client.invoke(new Api.messages.SendMultiMedia(sendPayload));
+
+      const updates = Array.isArray(result?.updates) ? result.updates : [];
+      const messageIds = updates
+        .filter(u => u?.className === 'UpdateMessageID')
+        .map(u => Number(u.id))
+        .filter(id => Number.isFinite(id) && id > 0);
+
+      return {
+        ok: true,
+        chatId: String(chatId),
+        results: messageIds.length
+          ? messageIds.map(id => ({ ok: true, telegramMessageId: id }))
+          : multiMedia.map(() => ({ ok: true, telegramMessageId: null })),
+      };
     }
   }
 

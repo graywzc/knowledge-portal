@@ -359,6 +359,44 @@ app.post('/api/telegram/send-image', async (req, res) => {
   }
 });
 
+/** Send multiple telegram images (array of clipboard data urls) */
+app.post('/api/telegram/send-images', async (req, res) => {
+  try {
+    const { chatId, images, caption, replyToId } = req.body || {};
+
+    const resolvedChatId = chatId
+      || process.env.TG_CHAT_ID
+      || process.env.TELEGRAM_CHAT_ID
+      || db.getPrimaryTelegramChatId();
+
+    if (!resolvedChatId) return res.status(400).json({ error: 'chatId required' });
+    if (!Array.isArray(images) || images.length === 0) return res.status(400).json({ error: 'images array required' });
+
+    const parsedImages = [];
+    for (let i = 0; i < images.length; i++) {
+      const dataUrl = String(images[i] || '');
+      const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (!m) return res.status(400).json({ error: `invalid dataUrl at index ${i}` });
+      const buf = Buffer.from(m[2], 'base64');
+      if (!buf.length) return res.status(400).json({ error: `empty image at index ${i}` });
+      parsedImages.push({ buffer: buf, mimeType: m[1], caption: i === 0 ? String(caption || '') : '' });
+    }
+
+    const result = await sender.sendImages({
+      chatId: String(resolvedChatId),
+      images: parsedImages,
+      replyToId,
+    });
+
+    return res.json(result);
+  } catch (err) {
+    const msg = String(err?.message || err);
+    console.error('[send-images]', err);
+    if (msg.includes('required') || msg.includes('invalid') || msg.includes('must be a numeric')) return res.status(400).json({ error: msg });
+    return res.status(500).json({ error: 'telegram images send failed', detail: msg });
+  }
+});
+
 function splitTelegramText(text, maxLen = 4096) {
   const input = String(text || '');
   if (input.length <= maxLen) return [input];
