@@ -2084,6 +2084,10 @@
           e.preventDefault();
           toggleDictation();
         }
+        if (e.code === 'Enter' && isListening) {
+          e.preventDefault();
+          stopDictation();
+        }
       });
 
       recognition.addEventListener('result', (e) => {
