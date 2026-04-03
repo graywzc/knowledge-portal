@@ -178,6 +178,10 @@ class Database {
     return inserted;
   }
 
+  updateReplyTo(id, newReplyToId) {
+    return this.db.prepare('UPDATE messages SET reply_to_id = ? WHERE id = ?').run(newReplyToId || null, id);
+  }
+
   /**
    * Insert multiple messages in a transaction.
    */
