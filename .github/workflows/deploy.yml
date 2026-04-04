@@ -13,11 +13,11 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to Mac mini
+    name: Deploy to Mac mini M4
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 20
 
     steps:
@@ -32,71 +32,33 @@ jobs:
             echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci-deploy
-          hostname: gha-deploy-knowledge-portal
-
-      - name: Setup SSH key
+      - name: Update code
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          cd /opt/knowledge-portal/current
+          git fetch origin --prune
+          git checkout -f "${{ steps.resolve_sha.outputs.sha }}"
 
-      - name: Deploy
+      - name: Install dependencies & test
         shell: bash
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_SHA: ${{ steps.resolve_sha.outputs.sha }}
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" "DEPLOY_SHA='${DEPLOY_SHA}' bash -s" << 'EOF'
-            set -euo pipefail
+          export PATH="/opt/homebrew/opt/node/bin:$PATH"
+          echo "node: $(node -v)  npm: $(npm -v)"
+          cd /opt/knowledge-portal/current
+          npm ci
+          npm test
 
-            BASE_DIR="/opt/knowledge-portal"
-            APP_DIR="$BASE_DIR/current"
-            SHARED_ENV="$BASE_DIR/shared/.env"
-            REPO="git@github.com:graywzc/knowledge-portal.git"
-
-            mkdir -p "$BASE_DIR/shared" "$BASE_DIR/data" "$BASE_DIR/media"
-
-            if [ ! -f "$SHARED_ENV" ]; then
-              echo "Missing env file: $SHARED_ENV"
-              exit 1
-            fi
-
-            if [ ! -d "$APP_DIR/.git" ]; then
-              rm -rf "$APP_DIR"
-              git clone "$REPO" "$APP_DIR"
-            fi
-
-            cd "$APP_DIR"
-            git fetch origin --prune
-            git checkout -f "$DEPLOY_SHA"
-
-            if [ -x /opt/homebrew/bin/brew ]; then
-              eval "$(/opt/homebrew/bin/brew shellenv)"
-            fi
-            export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
-
-            echo "node: $(node -v)"
-            echo "npm: $(npm -v)"
-
-            npm ci
-            npm test
-
-            pm2 delete knowledge-portal-app >/dev/null 2>&1 || true
-            pm2 delete knowledge-portal-ingest >/dev/null 2>&1 || true
-
-            ENV_FILE="$SHARED_ENV" pm2 start "npm run app:start" --name knowledge-portal-app --cwd "$APP_DIR"
+      - name: Restart services
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/opt/node/bin:/opt/homebrew/bin:$PATH"
+          APP_DIR="/opt/knowledge-portal/current"
+          SHARED_ENV="/opt/knowledge-portal/shared/.env"
+          pm2 restart knowledge-portal-app knowledge-portal-ingest || (
+            ENV_FILE="$SHARED_ENV" pm2 start "npm run app:start"    --name knowledge-portal-app    --cwd "$APP_DIR"
             ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:loop" --name knowledge-portal-ingest --cwd "$APP_DIR"
             pm2 save
-          EOF
+          )
