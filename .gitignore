@@ -13,3 +13,4 @@ shared/
 *.iml
 
 coverage/
+.claude/
