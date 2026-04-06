@@ -112,7 +112,7 @@ class ClaudeCodeIngestor {
       this.db.insertMessage({
         id,
         source: 'claude',
-        channel: `${this.hostname}:${encodedProject}`,
+        channel: encodedProject,
         topicId: sessionId,
         senderId: record.type === 'user' ? 'user' : 'claude-ai',
         senderName: record.type === 'user' ? 'Me' : 'Claude',
