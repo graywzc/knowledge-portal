@@ -353,7 +353,19 @@ describe('Database', () => {
     const dbPath = path.join(dir, 'legacy.db');
 
     const raw = new BetterSqlite3(dbPath);
-    raw.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8'));
+    // Simulate a pre-new-schema DB that has 'channel' but not 'chat_id'/'topic_id'
+    raw.exec(`CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      sender_id TEXT NOT NULL,
+      sender_role TEXT NOT NULL DEFAULT 'user',
+      content TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'text',
+      timestamp INTEGER NOT NULL,
+      channel TEXT,
+      raw_meta TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    )`);
     raw.prepare(`
       INSERT INTO messages (id, source, channel, sender_id, content, timestamp, raw_meta)
       VALUES (?, 'telegram', ?, 'u1', 'legacy', 1, ?)

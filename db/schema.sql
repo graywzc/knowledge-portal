@@ -1,55 +1,41 @@
 -- Source-agnostic message store
--- Raw chat data, flat, no tree logic here
+-- Raw communications from any source, flat, no tree logic here
 
 CREATE TABLE IF NOT EXISTS messages (
-  id            TEXT PRIMARY KEY,        -- unique message id (source-prefixed, e.g. "tg:12345")
-  source        TEXT NOT NULL,           -- data source identifier (e.g. "telegram", "slack")
-  channel       TEXT NOT NULL,           -- legacy scope key (topic_id if present else chat_id)
-  chat_id       TEXT,                    -- container/chat id (e.g. telegram group id)
-  topic_id      TEXT,                    -- optional sub-thread/topic id inside chat
-  sender_id     TEXT NOT NULL,           -- who sent it (source-specific user id)
-  sender_name   TEXT,                    -- display name (denormalized for convenience)
-  sender_role   TEXT NOT NULL DEFAULT 'user',  -- "self" or "user" or "bot" etc.
-  reply_to_id   TEXT,                    -- id of message being replied to (null if none)
+  id            TEXT PRIMARY KEY,        -- uuidv5(KP_NS, source_natural_key) for new messages
+  source        TEXT NOT NULL,           -- "telegram" | "claude"
+  sender_id     TEXT NOT NULL,           -- source-specific user/agent id
+  sender_name   TEXT,                    -- display name (denormalized)
+  sender_role   TEXT NOT NULL DEFAULT 'user',  -- "self" | "user" | "bot"
+  parent_id     TEXT,                    -- kp display parent (FK → messages.id); null = root
+  branched      INTEGER,                 -- NULL = infer from sender rules; 0 = same layer; 1 = new sub-layer
   content       TEXT NOT NULL,
-  content_type  TEXT NOT NULL DEFAULT 'text',  -- "text", "image", "file", etc.
-  media_path    TEXT,                    -- relative local media path, e.g. telegram/-100/55/123.jpg
-  media_mime    TEXT,                    -- e.g. image/jpeg
-  media_size    INTEGER,                 -- bytes
-  media_width   INTEGER,
-  media_height  INTEGER,
+  content_type  TEXT NOT NULL DEFAULT 'text',  -- "text" | "image" | "file"
   timestamp     INTEGER NOT NULL,        -- epoch ms
-  raw_meta      TEXT,                    -- source-specific metadata as JSON
+  meta          TEXT,                    -- source-specific JSON (reply_to_id, parent_uuid, media_path, etc.)
   created_at    INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(source, channel);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
-CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_to_id);
 
-CREATE TABLE IF NOT EXISTS layers (
-  layer_uuid        TEXT PRIMARY KEY,
-  source            TEXT NOT NULL,
-  channel           TEXT NOT NULL,
-  first_message_id  TEXT,
-  parent_layer_uuid TEXT,
-  title             TEXT,
-  done              INTEGER NOT NULL DEFAULT 0,
-  created_at        INTEGER NOT NULL,
-  updated_at        INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS topics (
+  id              TEXT PRIMARY KEY,   -- root message UUID (messages.id); topic IS its root message
+  parent_topic_id TEXT,               -- null = top-level (searchable); set = sub-topic (hidden)
+  name            TEXT,               -- user-searchable title
+  meta            TEXT,
+  archived        INTEGER NOT NULL DEFAULT 0,
+  deleted_at      INTEGER,            -- epoch ms; null = not deleted
+  created_at      INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
-CREATE INDEX IF NOT EXISTS idx_layers_scope ON layers(source, channel);
-CREATE INDEX IF NOT EXISTS idx_layers_parent ON layers(parent_layer_uuid);
 
--- Topic lifecycle metadata (source-agnostic identity + local visibility/deletion state)
-CREATE TABLE IF NOT EXISTS topics (
-  topic_uuid             TEXT PRIMARY KEY,
-  source                 TEXT NOT NULL,
-  name                   TEXT,
-  meta                   TEXT,
-  archived               INTEGER NOT NULL DEFAULT 0,   -- 0: shown in sidebar, 1: hidden
-  deleted_at             INTEGER,                      -- epoch ms; null means not deleted on upstream
-  created_at             INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
-  updated_at             INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+CREATE TABLE IF NOT EXISTS layers (
+  id               TEXT PRIMARY KEY,
+  first_message_id TEXT,               -- FK → messages.id
+  parent_layer_id  TEXT,               -- FK → layers.id
+  title            TEXT,
+  done             INTEGER NOT NULL DEFAULT 0,
+  created_at       INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  updated_at       INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );

@@ -81,6 +81,8 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
     if (u.endsWith('/api/telegram/topics/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.includes('/api/topics/') && u.endsWith('/delete') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.includes('/api/topics/') && u.endsWith('/archive') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
+    if (u.includes('/api/claude/topics')) return { json: async () => [] };
+    if (u.endsWith('/api/claude/projects')) return { json: async () => [] };
 
     throw new Error(`Unexpected fetch URL: ${u}`);
   });
@@ -128,17 +130,15 @@ describe('web component behavior (index.html)', () => {
 
   it('loads source options on init', async () => {
     await boot();
-    const sourceSelect = document.getElementById('source-select');
-    const options = Array.from(sourceSelect.options).map((o) => o.value);
-    expect(options).toContain('telegram');
+    await flush();
+    await flush();
+    const topicList = document.getElementById('topic-list');
+    expect(topicList.textContent).toContain('[V1] Tennis Social Media App');
   });
 
   it('loads telegram topics and renders selected topic messages', async () => {
     await boot({ view: makeView() });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -167,9 +167,6 @@ describe('web component behavior (index.html)', () => {
       ],
     });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -199,9 +196,6 @@ describe('web component behavior (index.html)', () => {
   it('loads view when selecting channel from channel dropdown', async () => {
     await boot({ view: makeView() });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -218,9 +212,6 @@ describe('web component behavior (index.html)', () => {
   it('navigates to child layer via branch badge and can go back via header link', async () => {
     await boot({ view: makeView({ withBranch: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -249,9 +240,6 @@ describe('web component behavior (index.html)', () => {
   it('supports tree-node click navigation to child layer', async () => {
     await boot({ view: makeView({ withBranch: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -275,9 +263,6 @@ describe('web component behavior (index.html)', () => {
   it('shows empty state when selected layer has no messages', async () => {
     await boot({ view: makeView({ empty: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -293,9 +278,6 @@ describe('web component behavior (index.html)', () => {
   it('renders image messages when mediaPath exists', async () => {
     await boot({ view: makeView({ withImage: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -313,9 +295,6 @@ describe('web component behavior (index.html)', () => {
   it('opens lightbox when clicking an inline image', async () => {
     await boot({ view: makeView({ withImage: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -352,9 +331,6 @@ describe('web component behavior (index.html)', () => {
   it('closes lightbox on Escape', async () => {
     await boot({ view: makeView({ withImage: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -382,9 +358,6 @@ describe('web component behavior (index.html)', () => {
     localStorage.setItem('kp:lastLayer:telegram:55', 'Z');
     await boot({ view: makeView() });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -402,9 +375,6 @@ describe('web component behavior (index.html)', () => {
     localStorage.setItem('kp:lastLayer:telegram:55', 'B');
     await boot({ view: makeView({ withBranch: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -429,9 +399,6 @@ describe('web component behavior (index.html)', () => {
     localStorage.setItem('kp:lastLayer:telegram:55', 'B');
     await boot({ view });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -459,9 +426,6 @@ describe('web component behavior (index.html)', () => {
   it('supports custom context-menu reply target, focuses composer, and cancel', async () => {
     await boot({ view: makeView() });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -503,9 +467,6 @@ describe('web component behavior (index.html)', () => {
   it('sends on Enter and keeps Shift+Enter for newline', async () => {
     await boot({ view: makeView() });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -544,9 +505,6 @@ describe('web component behavior (index.html)', () => {
   it('shows a clear composer warning when message text exceeds 4096 chars', async () => {
     await boot({ view: makeView() });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -580,9 +538,6 @@ describe('web component behavior (index.html)', () => {
       throw new Error(`Unexpected fetch URL: ${u}`);
     });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -625,9 +580,6 @@ describe('web component behavior (index.html)', () => {
 
     await boot({ view });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -733,9 +685,6 @@ describe('web component behavior (index.html)', () => {
   it('toggles message search panel with command+f when hovering right pane', async () => {
     await boot({ view: makeView() });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -860,9 +809,6 @@ describe('web component behavior (index.html)', () => {
     jest.spyOn(window, 'prompt').mockReturnValue('Renamed Branch');
     await boot({ view: makeView({ withBranch: true }) });
 
-    const sourceSelect = document.getElementById('source-select');
-    sourceSelect.value = 'telegram';
-    sourceSelect.dispatchEvent(new Event('change'));
     await flush();
     await flush();
 
@@ -901,8 +847,8 @@ describe('web component behavior (index.html)', () => {
     secondView.tree.messageCount = secondView.state.layers.A.messages.length;
 
     const fetchMock = jest.fn()
-      .mockResolvedValueOnce({ json: async () => ['telegram'] })
       .mockResolvedValueOnce({ json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false, updatedAt: Date.now() }] })
+      .mockResolvedValueOnce({ json: async () => [] })  // /api/claude/projects
       .mockResolvedValueOnce({ json: async () => firstView })
       .mockResolvedValueOnce({ json: async () => ({ ok: true, layers: {} }) })
       .mockResolvedValueOnce({ json: async () => secondView })
