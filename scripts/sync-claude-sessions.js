@@ -23,6 +23,7 @@ const { execSync } = require('child_process');
 const { ClaudeCodeIngestor } = require('../ingestion/ClaudeCodeIngestor');
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data/portal.db');
+const MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(process.cwd(), 'media');
 const CLAUDE_SOURCES = process.env.CLAUDE_SOURCES || '';
 
 function getLocalHostname() {
@@ -73,7 +74,7 @@ async function main() {
 
   for (const { hostname, projectsRoot } of sources) {
     console.log(`[Claude] Ingesting from ${hostname}: ${projectsRoot}`);
-    const ingestor = new ClaudeCodeIngestor({ dbPath: DB_PATH, projectsRoot, hostname });
+    const ingestor = new ClaudeCodeIngestor({ dbPath: DB_PATH, projectsRoot, hostname, mediaRoot: MEDIA_ROOT });
     const result = await ingestor.ingestAll();
     totalMessages += result.messages;
     totalSessions += result.sessions;
