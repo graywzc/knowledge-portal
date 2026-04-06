@@ -32,12 +32,14 @@ class ClaudeCodeIngestor {
    * @param {string} opts.projectsRoot     - path to ~/.claude/projects (or rsync mirror)
    * @param {string} opts.hostname         - Tailscale hostname of the source machine
    * @param {string} [opts.mediaRoot]      - root dir for saving image files (default: {cwd}/media)
+   * @param {string} [opts.imageCacheRoot] - synced mirror of ~/.claude/image-cache from this host
    */
   constructor(opts) {
     this.db = new Database(opts.dbPath);
     this.projectsRoot = opts.projectsRoot;
     this.hostname = opts.hostname;
     this.mediaRoot = opts.mediaRoot || path.join(process.cwd(), 'media');
+    this.imageCacheRoot = opts.imageCacheRoot || null;
   }
 
   /** Ingest all sessions under projectsRoot */
@@ -192,10 +194,22 @@ class ClaudeCodeIngestor {
             };
           }
 
-          // No image — collect text and tool_result blocks
+          // No image blocks — collect text and tool_result blocks.
+          // Also detect Claude Code's file-based image references:
+          //   text blocks with content "[Image: source: /path/to/image-cache/...]"
           const parts = [];
           for (const p of inner) {
             if (p.type === 'text' && p.text) {
+              const imageRef = p.text.match(/^\[Image: source: (.+\.(?:png|jpg|jpeg|gif|webp))\]$/i);
+              if (imageRef) {
+                const saved = await this.#saveImageFromPath(imageRef[1], record.uuid);
+                if (saved) {
+                  const otherText = inner
+                    .filter(q => q !== p && q.type === 'text' && q.text)
+                    .map(q => q.text).join('\n');
+                  return { content: otherText, contentType: 'image', mediaPath: saved.relPath, mediaMime: saved.mime, mediaSize: saved.size };
+                }
+              }
               parts.push(p.text);
             } else if (p.type === 'tool_result') {
               const resultText = this.#extractToolResultText(p);
@@ -253,6 +267,41 @@ class ClaudeCodeIngestor {
     } catch (e) {
       console.warn(`[Claude] Failed to save image for ${messageUuid}:`, e.message);
       return { relPath: null, mime, size: null };
+    }
+  }
+
+  /**
+   * Handle Claude Code's file-based image references.
+   * The JSONL stores a text block "[Image: source: /abs/path/to/image-cache/...]"
+   * instead of base64. We translate the absolute path to the synced mirror and copy
+   * the file into MEDIA_ROOT.
+   */
+  async #saveImageFromPath(absSourcePath, messageUuid) {
+    if (!this.imageCacheRoot) return null;
+
+    // Extract the relative part after "image-cache/" e.g. "{sessionId}/1.png"
+    const match = absSourcePath.match(/[/\\]image-cache[/\\](.+)$/);
+    if (!match) return null;
+
+    const relSource = match[1];
+    const srcPath = path.join(this.imageCacheRoot, relSource);
+    if (!fs.existsSync(srcPath)) return null;
+
+    const ext = path.extname(relSource).slice(1) || 'png';
+    const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+    const mime = mimeMap[ext.toLowerCase()] || 'image/png';
+    const relPath = path.join('claude', this.hostname, 'image-cache', relSource.replace(/[/\\]/g, path.sep));
+    const destPath = path.join(this.mediaRoot, relPath);
+
+    try {
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      if (!fs.existsSync(destPath)) fs.copyFileSync(srcPath, destPath);
+      let size = null;
+      try { size = fs.statSync(destPath).size; } catch {}
+      return { relPath, mime, size };
+    } catch (e) {
+      console.warn(`[Claude] Failed to copy image-cache file for ${messageUuid}:`, e.message);
+      return null;
     }
   }
 
