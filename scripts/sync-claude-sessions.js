@@ -52,7 +52,7 @@ async function main() {
         .filter(d => d.isDirectory())
         .map(d => d.name);
       for (const hostname of subdirs) {
-        sources.push({ hostname, projectsRoot: path.join(entry, hostname) });
+        sources.push({ hostname, projectsRoot: path.join(entry, hostname), imageCacheRoot: path.join(entry, hostname + '-image-cache') });
       }
     }
   }
@@ -61,7 +61,8 @@ async function main() {
   const localProjectsRoot = path.join(process.env.HOME || '~', '.claude', 'projects');
   if (fs.existsSync(localProjectsRoot)) {
     const localHostname = getLocalHostname();
-    sources.push({ hostname: localHostname, projectsRoot: localProjectsRoot });
+    const localImageCacheRoot = path.join(process.env.HOME || '~', '.claude', 'image-cache');
+    sources.push({ hostname: localHostname, projectsRoot: localProjectsRoot, imageCacheRoot: localImageCacheRoot });
   }
 
   if (sources.length === 0) {
@@ -72,9 +73,9 @@ async function main() {
   let totalMessages = 0;
   let totalSessions = 0;
 
-  for (const { hostname, projectsRoot } of sources) {
+  for (const { hostname, projectsRoot, imageCacheRoot } of sources) {
     console.log(`[Claude] Ingesting from ${hostname}: ${projectsRoot}`);
-    const ingestor = new ClaudeCodeIngestor({ dbPath: DB_PATH, projectsRoot, hostname, mediaRoot: MEDIA_ROOT });
+    const ingestor = new ClaudeCodeIngestor({ dbPath: DB_PATH, projectsRoot, hostname, mediaRoot: MEDIA_ROOT, imageCacheRoot });
     const result = await ingestor.ingestAll();
     totalMessages += result.messages;
     totalSessions += result.sessions;

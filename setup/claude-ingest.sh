@@ -15,6 +15,8 @@ if [ -f "${SOURCES_FILE}" ]; then
     mkdir -p "${DEST}"
     rsync -a --delete --timeout=30 "${HOSTNAME}:~/.claude/projects/" "${DEST}/" \
       || echo "[kp-ingest] rsync skipped for ${HOSTNAME} (offline or unreachable)"
+    rsync -a --delete --timeout=30 "${HOSTNAME}:~/.claude/image-cache/" "${SYNC_ROOT}/${HOSTNAME}-image-cache/" \
+      || echo "[kp-ingest] image-cache rsync skipped for ${HOSTNAME} (offline or unreachable)"
   done < "${SOURCES_FILE}"
 fi
 
