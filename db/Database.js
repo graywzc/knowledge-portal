@@ -103,6 +103,15 @@ class Database {
     }
 
     this.#normalizeTelegramScopes();
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ingest_file_state (
+        key        TEXT PRIMARY KEY,
+        file_mtime INTEGER NOT NULL,
+        file_size  INTEGER NOT NULL,
+        synced_at  INTEGER NOT NULL
+      )
+    `);
   }
 
   // Detect which PK column the topics table uses (legacy = topic_uuid, new = id)
@@ -302,6 +311,20 @@ class Database {
       .map(r => `${r.id}|${r.timestamp || ''}|${r.content || ''}|${r.media_path || ''}|${r.raw_meta || ''}|${r.meta || ''}`)
       .join('\n');
     return this.#hashString(payload);
+  }
+
+  // --- Ingest file state ---
+
+  getFileState(key) {
+    return this.db.prepare('SELECT file_mtime, file_size FROM ingest_file_state WHERE key = ?').get(key) || null;
+  }
+
+  setFileState(key, fileMtime, fileSize) {
+    this.db.prepare(`
+      INSERT INTO ingest_file_state (key, file_mtime, file_size, synced_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET file_mtime = excluded.file_mtime, file_size = excluded.file_size, synced_at = excluded.synced_at
+    `).run(key, fileMtime, fileSize, Date.now());
   }
 
   // --- Topics ---
