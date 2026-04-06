@@ -71,8 +71,6 @@ jobs:
           PLIST_DEST="${HOME}/Library/LaunchAgents/com.kp.claude-ingest.plist"
           DOMAIN="gui/$(id -u)"
           cp "$PLIST_SRC" "$PLIST_DEST"
-          # Bootstrap if not loaded, otherwise reload to pick up any plist changes
-          if launchctl print "${DOMAIN}/com.kp.claude-ingest" &>/dev/null; then
-            launchctl unload "$PLIST_DEST"
-          fi
-          launchctl load "$PLIST_DEST"
+          # Bootout if already loaded, then bootstrap (works outside GUI session)
+          launchctl bootout "${DOMAIN}/com.kp.claude-ingest" 2>/dev/null || true
+          launchctl bootstrap "${DOMAIN}" "$PLIST_DEST"
