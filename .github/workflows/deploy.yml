@@ -71,6 +71,7 @@ jobs:
           PLIST_DEST="${HOME}/Library/LaunchAgents/com.kp.claude-ingest.plist"
           DOMAIN="gui/$(id -u)"
           cp "$PLIST_SRC" "$PLIST_DEST"
+          chmod +x "/opt/knowledge-portal/current/setup/claude-ingest.sh"
           # Bootout if already loaded, then bootstrap (works outside GUI session)
           launchctl bootout "${DOMAIN}/com.kp.claude-ingest" 2>/dev/null || true
           launchctl bootstrap "${DOMAIN}" "$PLIST_DEST"
