@@ -62,3 +62,17 @@ jobs:
             ENV_FILE="$SHARED_ENV" pm2 start "npm run mtproto:loop" --name knowledge-portal-ingest --cwd "$APP_DIR"
             pm2 save
           )
+
+      - name: Install Claude ingest launchd agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLIST_SRC="/opt/knowledge-portal/current/setup/mac-mini-ingest.plist"
+          PLIST_DEST="${HOME}/Library/LaunchAgents/com.kp.claude-ingest.plist"
+          DOMAIN="gui/$(id -u)"
+          cp "$PLIST_SRC" "$PLIST_DEST"
+          # Bootstrap if not loaded, otherwise reload to pick up any plist changes
+          if launchctl print "${DOMAIN}/com.kp.claude-ingest" &>/dev/null; then
+            launchctl unload "$PLIST_DEST"
+          fi
+          launchctl load "$PLIST_DEST"
