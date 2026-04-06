@@ -57,7 +57,14 @@ class ClaudeCodeIngestor {
       for (const filename of sessionFiles) {
         const sessionId = filename.replace(/\.jsonl$/, '');
         const filePath = path.join(projectPath, filename);
+        const stat = fs.statSync(filePath);
+        const stateKey = `claude:${this.hostname}:${encodedProject}:${sessionId}`;
+        const stored = this.db.getFileState(stateKey);
+        if (stored && stored.file_mtime === Math.floor(stat.mtimeMs) && stored.file_size === stat.size) {
+          continue; // unchanged since last ingest
+        }
         const count = await this.ingestSession({ encodedProject, sessionId, filePath });
+        this.db.setFileState(stateKey, Math.floor(stat.mtimeMs), stat.size);
         totalMessages += count;
         totalSessions++;
       }
