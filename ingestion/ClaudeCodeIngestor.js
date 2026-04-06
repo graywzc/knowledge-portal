@@ -31,11 +31,13 @@ class ClaudeCodeIngestor {
    * @param {string} opts.dbPath           - path to kp SQLite database
    * @param {string} opts.projectsRoot     - path to ~/.claude/projects (or rsync mirror)
    * @param {string} opts.hostname         - Tailscale hostname of the source machine
+   * @param {string} [opts.mediaRoot]      - root dir for saving image files (default: {cwd}/media)
    */
   constructor(opts) {
     this.db = new Database(opts.dbPath);
     this.projectsRoot = opts.projectsRoot;
     this.hostname = opts.hostname;
+    this.mediaRoot = opts.mediaRoot || path.join(process.cwd(), 'media');
   }
 
   /** Ingest all sessions under projectsRoot */
@@ -104,9 +106,9 @@ class ClaudeCodeIngestor {
         ? this.#messageId(encodedProject, sessionId, record.parentUuid)
         : null;
 
-      const extracted = this.#extractContent(record);
+      const extracted = await this.#extractContent(record, { encodedProject, sessionId });
       if (!extracted) continue; // tool-result-only turn — nothing to store
-      const { content, contentType } = extracted;
+      const { content, contentType, mediaPath, mediaMime, mediaSize } = extracted;
       const timestamp = this.#parseTimestamp(record.timestamp);
 
       this.db.insertMessage({
@@ -121,6 +123,9 @@ class ClaudeCodeIngestor {
         branched: 0,  // Claude sessions are always flat
         content,
         contentType,
+        mediaPath: mediaPath || null,
+        mediaMime: mediaMime || null,
+        mediaSize: mediaSize || null,
         timestamp,
         meta: JSON.stringify({
           hostname: this.hostname,
@@ -153,7 +158,7 @@ class ClaudeCodeIngestor {
     return Number.isFinite(parsed) ? parsed : Date.now();
   }
 
-  #extractContent(record) {
+  async #extractContent(record, { encodedProject, sessionId }) {
     const msg = record.message;
 
     if (record.type === 'user') {
@@ -163,6 +168,24 @@ class ClaudeCodeIngestor {
         const inner = msg.content;
         if (typeof inner === 'string') return { content: inner, contentType: 'text' };
         if (Array.isArray(inner)) {
+          const imageBlocks = inner.filter(p => p.type === 'image');
+
+          if (imageBlocks.length > 0) {
+            // Save the first image block to disk; collect any text as caption
+            const textParts = inner
+              .filter(p => p.type === 'text' && p.text)
+              .map(p => p.text);
+            const saved = await this.#saveImageBlock(imageBlocks[0], encodedProject, sessionId, record.uuid);
+            return {
+              content: textParts.join('\n') || '',
+              contentType: 'image',
+              mediaPath: saved?.relPath || null,
+              mediaMime: saved?.mime || null,
+              mediaSize: saved?.size || null,
+            };
+          }
+
+          // No image — collect text and tool_result blocks
           const parts = [];
           for (const p of inner) {
             if (p.type === 'text' && p.text) {
@@ -172,7 +195,7 @@ class ClaudeCodeIngestor {
               if (resultText) parts.push(`[tool_result]\n${resultText}`);
             }
           }
-          if (parts.length === 0) return null;
+          if (parts.length === 0) return null; // tool-result-only turn, skip
           return { content: parts.join('\n'), contentType: 'text' };
         }
       }
@@ -200,6 +223,30 @@ class ClaudeCodeIngestor {
     }
 
     return { content: '[message]', contentType: 'text' };
+  }
+
+  async #saveImageBlock(block, encodedProject, sessionId, messageUuid) {
+    const source = block?.source;
+    if (!source || source.type !== 'base64' || !source.data) return null;
+
+    const mime = source.media_type || 'image/jpeg';
+    const extMap = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
+    const ext = extMap[mime] || 'jpg';
+    const relPath = path.join('claude', this.hostname, encodedProject, sessionId, `${messageUuid}.${ext}`);
+    const absPath = path.join(this.mediaRoot, relPath);
+
+    try {
+      fs.mkdirSync(path.dirname(absPath), { recursive: true });
+      if (!fs.existsSync(absPath)) {
+        fs.writeFileSync(absPath, Buffer.from(source.data, 'base64'));
+      }
+      let size = null;
+      try { size = fs.statSync(absPath).size; } catch {}
+      return { relPath, mime, size };
+    } catch (e) {
+      console.warn(`[Claude] Failed to save image for ${messageUuid}:`, e.message);
+      return { relPath: null, mime, size: null };
+    }
   }
 
   /** Extract text from a tool_result block, truncated to avoid huge blobs. */
