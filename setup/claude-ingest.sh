@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-KP_DIR=/Users/graywzc/projects/knowledge-portal
+KP_DIR=/opt/knowledge-portal/current
 SYNC_ROOT=/Users/graywzc/claude-sync
 SOURCES_FILE="${HOME}/.kp-claude-sources"
 
@@ -18,7 +18,13 @@ if [ -f "${SOURCES_FILE}" ]; then
   done < "${SOURCES_FILE}"
 fi
 
+# Load shared env for DB_PATH if available
+SHARED_ENV=/opt/knowledge-portal/shared/.env
+if [ -f "${SHARED_ENV}" ]; then
+  set -a; source "${SHARED_ENV}"; set +a
+fi
+
 # Ingest all sources (local machine always included by sync-claude-sessions.js)
 CLAUDE_SOURCES="${SYNC_ROOT}" \
-  DB_PATH=/Users/graywzc/projects/knowledge-portal/data/portal.db \
+  DB_PATH="${DB_PATH:-/Users/graywzc/projects/knowledge-portal/data/portal.db}" \
   /opt/homebrew/bin/node "${KP_DIR}/scripts/sync-claude-sessions.js"
