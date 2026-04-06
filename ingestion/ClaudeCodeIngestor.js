@@ -163,11 +163,16 @@ class ClaudeCodeIngestor {
         const inner = msg.content;
         if (typeof inner === 'string') return { content: inner, contentType: 'text' };
         if (Array.isArray(inner)) {
-          const parts = inner
-            .filter(p => p.type !== 'tool_result')
-            .map(p => (p.type === 'text' ? p.text || '' : ''))
-            .filter(Boolean);
-          if (parts.length === 0) return null; // tool-result-only turn, skip
+          const parts = [];
+          for (const p of inner) {
+            if (p.type === 'text' && p.text) {
+              parts.push(p.text);
+            } else if (p.type === 'tool_result') {
+              const resultText = this.#extractToolResultText(p);
+              if (resultText) parts.push(`[tool_result]\n${resultText}`);
+            }
+          }
+          if (parts.length === 0) return null;
           return { content: parts.join('\n'), contentType: 'text' };
         }
       }
@@ -183,7 +188,7 @@ class ClaudeCodeIngestor {
             if (block.type === 'text' && block.text) {
               parts.push(block.text);
             } else if (block.type === 'tool_use' && block.name) {
-              parts.push(`[tool: ${block.name}]`);
+              parts.push(this.#formatToolUse(block));
             }
           }
           return { content: parts.join('\n') || '[assistant message]', contentType: 'text' };
@@ -195,6 +200,57 @@ class ClaudeCodeIngestor {
     }
 
     return { content: '[message]', contentType: 'text' };
+  }
+
+  /** Extract text from a tool_result block, truncated to avoid huge blobs. */
+  #extractToolResultText(block, maxLen = 2000) {
+    const content = block.content;
+    if (!content) return null;
+    let text = '';
+    if (typeof content === 'string') {
+      text = content;
+    } else if (Array.isArray(content)) {
+      text = content
+        .filter(c => c.type === 'text')
+        .map(c => c.text || '')
+        .join('\n');
+    }
+    text = text.trim();
+    if (!text) return null;
+    return text.length > maxLen ? text.slice(0, maxLen) + '\n…(truncated)' : text;
+  }
+
+  #formatToolUse(block) {
+    const name = block.name;
+    const input = block.input || {};
+
+    switch (name) {
+      case 'Bash':
+        return `[tool: Bash]\n${input.command || ''}`;
+      case 'Read':
+        return `[tool: Read] ${input.file_path || ''}`;
+      case 'Write':
+        return `[tool: Write] ${input.file_path || ''}`;
+      case 'Edit': {
+        const old = (input.old_string || '').slice(0, 120);
+        const neu = (input.new_string || '').slice(0, 120);
+        return `[tool: Edit] ${input.file_path || ''}\n- ${old}\n+ ${neu}`;
+      }
+      case 'Glob':
+        return `[tool: Glob] ${input.pattern || ''}${input.path ? ` in ${input.path}` : ''}`;
+      case 'Grep':
+        return `[tool: Grep] ${input.pattern || ''}${input.path ? ` in ${input.path}` : ''}`;
+      default: {
+        const summary = Object.entries(input)
+          .slice(0, 3)
+          .map(([k, v]) => {
+            const val = typeof v === 'string' ? v.slice(0, 200) : JSON.stringify(v).slice(0, 200);
+            return `${k}: ${val}`;
+          })
+          .join(', ');
+        return `[tool: ${name}]${summary ? ` ${summary}` : ''}`;
+      }
+    }
   }
 
   #readJsonl(filePath) {
