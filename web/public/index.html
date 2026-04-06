@@ -2011,17 +2011,17 @@
 
     document.getElementById('topics-tab-active').onclick = async () => {
       setTopicsViewMode('active');
-      if (currentSource === 'telegram') await loadChannels('telegram');
+      await loadChannels('telegram');
     };
 
     document.getElementById('topics-tab-archived').onclick = async () => {
       setTopicsViewMode('archived');
-      if (currentSource === 'telegram') await loadChannels('telegram');
+      await loadChannels('telegram');
     };
 
     document.getElementById('topics-timespan-select').addEventListener('change', async (e) => {
       topicsTimespanMode = String(e.target.value || 'week');
-      if (currentSource === 'telegram') await loadChannels('telegram');
+      await loadChannels('telegram');
     });
 
     document.getElementById('image-lightbox-backdrop').addEventListener('click', closeImageLightbox);
