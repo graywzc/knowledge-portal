@@ -56,27 +56,36 @@ function buildTree(source, channel) {
 
   for (const msg of messages) {
     const senderId = String(msg.sender_id);
-    const sender = senderId === String(viewerId)
-      ? 'self'
-      : (botIds.has(senderId) ? 'bot' : 'other');
+    const senderRole = msg.sender_role || 'user';
+    // Use stored sender_role directly for 'self'/'bot' (Claude sessions set this explicitly).
+    // Telegram messages have sender_role='user' so they fall through to viewerId inference.
+    const sender = (senderRole === 'self' || senderRole === 'bot')
+      ? senderRole
+      : (senderId === String(viewerId) ? 'self' : (botIds.has(senderId) ? 'bot' : 'other'));
 
-    let entities = null;
+    let parsedMeta = null;
     try {
-      const meta = msg.raw_meta ? JSON.parse(msg.raw_meta) : null;
-      entities = Array.isArray(meta?.entities) ? meta.entities : null;
+      parsedMeta = msg.meta ? JSON.parse(msg.meta) : (msg.raw_meta ? JSON.parse(msg.raw_meta) : null);
     } catch {}
+
+    const entities = Array.isArray(parsedMeta?.entities) ? parsedMeta.entities : null;
+    const parentId = msg.parent_id || msg.reply_to_id || null;
+    const branched = msg.branched !== undefined && msg.branched !== null ? Number(msg.branched) : null;
 
     nav.addMessage({
       id: msg.id,
       sender,
-      replyToId: msg.reply_to_id || null,
+      parentId,
+      replyToId: parentId,
+      branched,
       content: msg.content,
       contentType: msg.content_type || 'text',
-      mediaPath: msg.media_path || null,
-      mediaMime: msg.media_mime || null,
-      mediaWidth: msg.media_width,
-      mediaHeight: msg.media_height,
+      mediaPath: msg.media_path || parsedMeta?.media_path || null,
+      mediaMime: msg.media_mime || parsedMeta?.media_mime || null,
+      mediaWidth: msg.media_width ?? parsedMeta?.media_width ?? null,
+      mediaHeight: msg.media_height ?? parsedMeta?.media_height ?? null,
       timestamp: msg.timestamp,
+      meta: parsedMeta,
       entities,
     });
   }
@@ -105,6 +114,18 @@ app.get('/api/telegram/topics', (req, res) => {
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
   const includeArchived = String(req.query.includeArchived || '').toLowerCase() === 'true';
   res.json(db.getTelegramTopics(chatId, { includeArchived }));
+});
+
+/** List Claude sessions (optionally filtered by encodedProject) */
+app.get('/api/claude/topics', (req, res) => {
+  const limit = Number(req.query.limit) || 100;
+  const encodedProject = req.query.encodedProject || null;
+  res.json(db.getClaudeTopics({ limit, encodedProject }));
+});
+
+/** List Claude projects (aggregated from sessions) */
+app.get('/api/claude/projects', (req, res) => {
+  res.json(db.getClaudeProjects());
 });
 
 /** Search topics by title (read-only) */
@@ -208,9 +229,11 @@ app.get('/api/sources/:source/channels/:channel/messages', (req, res) => {
 
 app.patch('/api/messages/:id/reply-to', (req, res) => {
   const id = decodeURIComponent(req.params.id);
-  const { newReplyToId } = req.body || {};
+  const { newReplyToId, newParentId, branched } = req.body || {};
   if (!id) return res.status(400).json({ error: 'id required' });
-  const result = db.updateReplyTo(id, newReplyToId || null);
+  const parentId = newParentId !== undefined ? (newParentId || null) : (newReplyToId || null);
+  const branchedVal = branched !== undefined ? branched : null;
+  const result = db.updateParent(id, parentId, branchedVal);
   if (result.changes === 0) return res.status(404).json({ error: 'message not found' });
   res.json({ ok: true });
 });
@@ -301,7 +324,8 @@ app.post('/api/topics/:topicUUID/delete', async (req, res) => {
 
     const topic = db.getTopicByUUID(topicUUID);
     if (!topic) return res.status(404).json({ error: 'topic not found' });
-    if (topic.source !== 'telegram') return res.status(400).json({ error: 'only telegram topic delete supported' });
+    const topicSource = topic.source || topic.meta?.source || null;
+    if (topicSource !== 'telegram') return res.status(400).json({ error: 'only telegram topic delete supported' });
     if (topic.deleted_at) return res.status(400).json({ error: 'topic already deleted' });
 
     const reqChatId = req.body?.chatId;

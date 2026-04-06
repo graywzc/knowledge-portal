@@ -116,13 +116,35 @@ class TreeNavigator {
    * @param {object} msg
    * @param {string} msg.id - unique message id
    * @param {string} msg.sender - "self" | "other" | "bot"
-   * @param {string|null} msg.replyToId - id of message being replied to, or null
+   * @param {string|null} [msg.parentId] - kp display parent id (preferred)
+   * @param {string|null} [msg.replyToId] - legacy alias for parentId
+   * @param {number|null} [msg.branched] - 1=force branch, 0=force append, null=infer via strategy
    * @param {*} msg.content - message content (opaque to this module)
    * @param {number} msg.timestamp - epoch ms
    * @returns {{ layerUuid: string, action: string }} - where message was placed and what happened
    */
   addMessage(msg) {
-    const action = this.strategy.decide(this, msg);
+    // parentId is the canonical field; replyToId is the legacy alias
+    const parentId = msg.parentId !== undefined ? msg.parentId : (msg.replyToId || null);
+    const normalizedMsg = { ...msg, parentId, replyToId: parentId };
+
+    let action;
+    if (msg.branched === 1) {
+      // Explicit branch: find the layer containing parentId
+      const loc = parentId ? this.messageIndex.get(parentId) : null;
+      action = { type: 'branch', fromLayerUuid: loc ? loc.layerUuid : this.currentLayerUuid };
+    } else if (msg.branched === 0) {
+      // Explicit append: follow parentId into its layer without branching
+      const loc = parentId ? this.messageIndex.get(parentId) : null;
+      if (loc) {
+        this.currentLayerUuid = loc.layerUuid;
+      }
+      action = { type: 'append' };
+    } else {
+      // branched is null/undefined — fall back to strategy inference
+      action = this.strategy.decide(this, normalizedMsg);
+    }
+
     let targetLayerUuid;
 
     switch (action.type) {
@@ -131,7 +153,7 @@ class TreeNavigator {
         break;
       }
       case 'branch': {
-        const newLayer = this.#createLayer(action.fromLayerUuid, msg.replyToId, msg.id);
+        const newLayer = this.#createLayer(action.fromLayerUuid, parentId, msg.id);
         targetLayerUuid = newLayer.id;
         this.currentLayerUuid = newLayer.id;
         break;
@@ -145,6 +167,7 @@ class TreeNavigator {
         throw new Error(`Unknown action type: ${action.type}`);
     }
 
+    const meta = (typeof msg.meta === 'string') ? (() => { try { return JSON.parse(msg.meta); } catch { return {}; } })() : (msg.meta || {});
     const layer = this.layers.get(targetLayerUuid);
     const position = layer.messages.length;
     layer.messages.push({
@@ -152,13 +175,14 @@ class TreeNavigator {
       sender: msg.sender,
       content: msg.content,
       contentType: msg.contentType || 'text',
-      mediaPath: msg.mediaPath || null,
-      mediaMime: msg.mediaMime || null,
-      mediaWidth: Number.isFinite(msg.mediaWidth) ? msg.mediaWidth : null,
-      mediaHeight: Number.isFinite(msg.mediaHeight) ? msg.mediaHeight : null,
+      mediaPath: msg.mediaPath || meta.media_path || null,
+      mediaMime: msg.mediaMime || meta.media_mime || null,
+      mediaWidth: Number.isFinite(msg.mediaWidth) ? msg.mediaWidth : (Number.isFinite(meta.media_width) ? meta.media_width : null),
+      mediaHeight: Number.isFinite(msg.mediaHeight) ? msg.mediaHeight : (Number.isFinite(meta.media_height) ? meta.media_height : null),
       timestamp: msg.timestamp,
-      replyToId: msg.replyToId,
-      entities: msg.entities || null,
+      parentId,
+      replyToId: parentId,
+      entities: msg.entities || meta.entities || null,
     });
     this.messageIndex.set(msg.id, { layerUuid: targetLayerUuid, position });
 
@@ -251,11 +275,12 @@ class DefaultNavigationStrategy {
    * 4. Reply to own message → jump back to that layer, append
    */
   decide(navigator, msg) {
-    if (!msg.replyToId) {
+    const parentId = msg.parentId !== undefined ? msg.parentId : (msg.replyToId || null);
+    if (!parentId) {
       return { type: 'append' };
     }
 
-    const loc = navigator.getMessageLocation(msg.replyToId);
+    const loc = navigator.getMessageLocation(parentId);
     if (!loc) {
       // Reply to unknown message — treat as append
       return { type: 'append' };

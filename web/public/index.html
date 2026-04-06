@@ -35,6 +35,7 @@
     }
     .tree-node:hover { background: rgba(255,255,255,0.1); }
     .tree-node.active { background: rgba(100,140,255,0.3); }
+    .topic-section-label { padding: 10px 4px 3px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #666; user-select: none; }
     .tree-toggle { width: 16px; text-align: center; font-weight: 700; opacity: 0.9; cursor: pointer; user-select: none; }
     .tree-toggle.placeholder { visibility: hidden; }
     .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -179,10 +180,6 @@
 <body>
   <div id="sidebar">
     <div>
-      <h2>Source</h2>
-      <select id="source-select"><option value="">Select source...</option></select>
-    </div>
-    <div>
       <div class="sidebar-row">
         <div style="display:flex; align-items:center; gap:8px; min-width:0;">
           <div class="topics-tabs">
@@ -231,7 +228,7 @@
       </div>
     </div>
     <div id="messages">
-      <div id="empty-state">Select a source and channel to view messages</div>
+      <div id="empty-state">Select a topic to view messages</div>
     </div>
     <div id="composer" class="hidden">
       <div id="reply-banner"></div>
@@ -288,6 +285,7 @@
     let hoveredPane = null;
     let topicsViewMode = 'active'; // active | archived
     let viewState = null;
+    let currentClaudeSessions = []; // sessions for the currently selected Claude project
     let topicSearchOpen = false;
     let topicSearchQuery = '';
     let topicSearchResults = [];
@@ -793,7 +791,7 @@
       const prev = layerDoneState.get(String(layerUuid)) || { title: null, done: false, updatedAt: 0 };
       const nextTitle = String(title || '').trim() || null;
       layerDoneState.set(String(layerUuid), { ...prev, title: nextTitle, updatedAt: Date.now() });
-      if (viewState?.tree) renderTree(viewState.tree);
+      if (viewState?.tree) renderCurrentTree();
       showLayer(currentLayerUuid);
       try {
         const out = await api('POST', `/layers/${encodeURIComponent(layerUuid)}/title`, {
@@ -803,11 +801,11 @@
         });
         if (out?.error) throw new Error(out.error);
         layerDoneState.set(String(layerUuid), { ...prev, title: out?.title || null, done: prev.done, updatedAt: Number(out?.updatedAt || Date.now()) });
-        if (viewState?.tree) renderTree(viewState.tree);
+        if (viewState?.tree) renderCurrentTree();
         showLayer(currentLayerUuid);
       } catch (e) {
         layerDoneState.set(String(layerUuid), prev);
-        if (viewState?.tree) renderTree(viewState.tree);
+        if (viewState?.tree) renderCurrentTree();
         showLayer(currentLayerUuid);
         alert('Failed to update layer title.');
       }
@@ -816,7 +814,7 @@
     async function setLayerDone(layerUuid, done) {
       const prev = layerDoneState.get(String(layerUuid)) || { done: false, updatedAt: 0 };
       layerDoneState.set(String(layerUuid), { done: !!done, updatedAt: Date.now() });
-      if (viewState?.tree) renderTree(viewState.tree);
+      if (viewState?.tree) renderCurrentTree();
       showLayer(currentLayerUuid);
       try {
         const out = await api('POST', `/layers/${encodeURIComponent(layerUuid)}/done`, {
@@ -827,7 +825,7 @@
         if (out?.error) throw new Error(out.error);
       } catch (e) {
         layerDoneState.set(String(layerUuid), prev);
-        if (viewState?.tree) renderTree(viewState.tree);
+        if (viewState?.tree) renderCurrentTree();
         showLayer(currentLayerUuid);
         alert('Failed to update layer done status.');
       }
@@ -960,19 +958,78 @@
     }
 
     async function loadSources() {
-      const sources = await api('GET', '/sources');
-      const sel = document.getElementById('source-select');
-      sel.innerHTML = '<option value="">Select source...</option>';
-      sources.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s; opt.textContent = s;
-        sel.appendChild(opt);
-      });
+      currentSource = 'telegram';
+      await loadChannels('telegram');
+    }
 
-      if (sources.includes('telegram')) {
-        currentSource = 'telegram';
-        sel.value = 'telegram';
-        await loadChannels('telegram');
+    /** Populate #tree with sessions for the given Claude project, as layer rows. */
+    async function selectClaudeProject(project) {
+      // Mark this project row active in topic list
+      document.querySelectorAll('#topic-list .tree-node.active').forEach(r => r.classList.remove('active'));
+      const projectRow = document.querySelector(`#topic-list .tree-node[data-claude-project="${CSS.escape(project.key)}"]`);
+      if (projectRow) projectRow.classList.add('active');
+
+      currentSource = 'claude';
+      currentTopicUUID = null;
+      currentChannel = null;
+      currentTopicName = project.projectName || project.encodedProject || '';
+      currentTopicChatId = null;
+      currentTopicDeletedAt = null;
+      updateComposerVisibility();
+
+      const tree = document.getElementById('tree');
+      tree.innerHTML = '<div style="color:#888;font-size:12px;padding:4px 0;">Loading sessions…</div>';
+
+      let sessions;
+      try {
+        sessions = await api('GET', `/claude/topics?encodedProject=${encodeURIComponent(project.encodedProject)}&limit=200`);
+      } catch (_) {
+        tree.innerHTML = '';
+        return;
+      }
+      currentClaudeSessions = sessions || [];
+      renderClaudeSessionsInTree();
+    }
+
+    /** Render currentClaudeSessions into #tree, highlighting the active session. */
+    function renderClaudeSessionsInTree() {
+      const tree = document.getElementById('tree');
+      tree.innerHTML = '';
+      for (const s of currentClaudeSessions) {
+        const row = document.createElement('div');
+        row.className = 'tree-node' + (s.topicUUID === currentTopicUUID ? ' active' : '');
+        row.setAttribute('data-layer-id', s.topicUUID);
+
+        const dot = document.createElement('span');
+        dot.className = 'tree-toggle placeholder';
+        dot.textContent = '·';
+        row.appendChild(dot);
+
+        const label = document.createElement('span');
+        label.className = 'tree-label';
+        label.textContent = s.name || s.sessionId?.slice(0, 8) || 'Session';
+        row.appendChild(label);
+
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:11px;color:#888;margin-top:1px;padding-left:18px;';
+        const parts = [];
+        if (s.gitBranch && s.gitBranch !== 'HEAD') parts.push(s.gitBranch);
+        if (s.updatedAt) parts.push(formatTopicUpdatedLabel(s.updatedAt));
+        meta.textContent = parts.join(' · ');
+        row.appendChild(meta);
+
+        row.onclick = async () => {
+          currentSource = 'claude';
+          currentTopicUUID = s.topicUUID;
+          currentChannel = s.sessionId;
+          currentTopicName = s.name || '';
+          currentTopicChatId = null;
+          currentTopicDeletedAt = null;
+          updateComposerVisibility();
+          await loadCurrentTopicView();
+          startRealtimeStream();
+        };
+        tree.appendChild(row);
       }
     }
 
@@ -1018,7 +1075,7 @@
       const exists = saved && viewState?.state?.layers?.[saved];
       currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
       expandPathToLayer(currentLayerUuid);
-      renderTree(viewState.tree);
+      renderCurrentTree();
 
       const currentSnapshot = currentLayerUuid ? getLayerSnapshot(viewState.state, currentLayerUuid) : null;
       const currentLayerChanged = !!(
@@ -1163,6 +1220,8 @@
           row.appendChild(label);
 
           row.onclick = async () => {
+            currentClaudeSessions = [];
+            currentSource = 'telegram';
             currentChannel = t.id;
             currentTopicUUID = t.topicUUID ? String(t.topicUUID) : '';
             currentTopicName = t.name || '';
@@ -1188,6 +1247,30 @@
           topicList.appendChild(row);
         });
         updateTopicWipUI();
+
+        // Append Claude projects below Telegram topics
+        let projects = [];
+        try { projects = await api('GET', '/claude/projects'); } catch (_) {}
+        if (Array.isArray(projects) && projects.length > 0) {
+          const divider = document.createElement('div');
+          divider.className = 'topic-section-label';
+          divider.textContent = 'CLAUDE';
+          topicList.appendChild(divider);
+
+          for (const p of projects) {
+            const row = document.createElement('div');
+            row.className = 'tree-node';
+            row.setAttribute('data-claude-project', p.key);
+
+            const label = document.createElement('span');
+            label.className = 'topic-label';
+            label.textContent = `${p.projectName || p.encodedProject} (${p.sessionCount})`;
+            row.appendChild(label);
+
+            row.onclick = () => selectClaudeProject(p);
+            topicList.appendChild(row);
+          }
+        }
         return;
       }
 
@@ -1423,7 +1506,7 @@
       const exists = saved && viewState?.state?.layers?.[saved];
       currentLayerUuid = exists ? saved : viewState.currentLayerUuid;
       expandPathToLayer(currentLayerUuid);
-      renderTree(viewState.tree);
+      renderCurrentTree();
 
       const currentSnapshot = currentLayerUuid ? getLayerSnapshot(viewState.state, currentLayerUuid) : null;
       const currentLayerChanged = !!(
@@ -1479,6 +1562,14 @@
       }
     }
 
+    function renderCurrentTree() {
+      if (currentSource === 'claude' && currentClaudeSessions.length > 0) {
+        renderClaudeSessionsInTree();
+      } else if (viewState?.tree) {
+        renderTree(viewState.tree);
+      }
+    }
+
     function renderTree(node, container) {
       if (!container) {
         container = document.getElementById('tree');
@@ -1502,7 +1593,7 @@
           e.stopPropagation();
           if (expandedNodes.has(node.id)) expandedNodes.delete(node.id);
           else expandedNodes.add(node.id);
-          renderTree(viewState.tree);
+          renderCurrentTree();
         };
       }
 
@@ -1616,7 +1707,7 @@
       });
 
       // Re-render tree to update active highlight
-      if (viewState.tree) renderTree(viewState.tree);
+      if (viewState.tree) renderCurrentTree();
       setNewMessagesIndicatorVisible(!!pendingNewMessagesLayerUuid && currentLayerUuid === pendingNewMessagesLayerUuid);
 
       if (focusMessageId) {
@@ -1988,19 +2079,6 @@
       }
     });
 
-    document.getElementById('source-select').onchange = async (e) => {
-      currentSource = e.target.value;
-      currentChannel = '';
-      currentTopicUUID = '';
-      currentTopicName = '';
-      currentTopicChatId = null;
-      currentTopicDeletedAt = null;
-      if (currentSource !== 'telegram') setTopicsViewMode('active');
-      updateComposerVisibility();
-      stopRealtimeStream();
-      closeTopicContextMenu();
-      if (currentSource) await loadChannels(currentSource);
-    };
 
     document.getElementById('channel-select').onchange = async (e) => {
       currentChannel = e.target.value;

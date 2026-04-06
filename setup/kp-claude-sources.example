@@ -1,0 +1,7 @@
+# ~/.kp-claude-sources — one Tailscale hostname per line
+# These are remote machines whose ~/.claude/projects/ will be rsynced to this machine.
+# The local machine (mini4) is always included automatically.
+#
+# To register a machine: ensure Remote Login is enabled on it and it's on Tailscale,
+# then add its hostname here and reload the launchd agent.
+mba

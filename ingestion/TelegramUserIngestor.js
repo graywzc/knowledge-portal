@@ -64,7 +64,8 @@ class TelegramUserIngestor {
     const ext = 'jpg';
     const relPath = path.join('telegram', String(dbMsg.chatId || this.chatId), String(dbMsg.topicId || 'no-topic'), `${msg.id}.${ext}`);
     const absPath = path.join(this.mediaRoot, relPath);
-    const baseMeta = { ...(dbMsg.rawMeta || {}), media_kind: 'photo' };
+    const mediaWidth = Number.isFinite(msg.photo?.w) ? msg.photo.w : null;
+    const mediaHeight = Number.isFinite(msg.photo?.h) ? msg.photo.h : null;
 
     try {
       fs.mkdirSync(path.dirname(absPath), { recursive: true });
@@ -78,27 +79,31 @@ class TelegramUserIngestor {
       let stat = null;
       try { stat = fs.statSync(absPath); } catch {}
 
+      const mediaMeta = { ...(dbMsg.rawMeta || {}), media_kind: 'photo', media_path: relPath, media_mime: 'image/jpeg', media_size: stat?.size || null, media_width: mediaWidth, media_height: mediaHeight };
       return {
         ...dbMsg,
         contentType: 'image',
         mediaPath: relPath,
         mediaMime: 'image/jpeg',
         mediaSize: stat?.size || null,
-        mediaWidth: Number.isFinite(msg.photo?.w) ? msg.photo.w : null,
-        mediaHeight: Number.isFinite(msg.photo?.h) ? msg.photo.h : null,
-        rawMeta: baseMeta,
+        mediaWidth,
+        mediaHeight,
+        meta: mediaMeta,
+        rawMeta: mediaMeta,
       };
     } catch (_e) {
       // Non-blocking media failure: keep ingest moving.
+      const mediaMeta = { ...(dbMsg.rawMeta || {}), media_kind: 'photo', media_path: null, media_mime: 'image/jpeg', media_size: null, media_width: mediaWidth, media_height: mediaHeight };
       return {
         ...dbMsg,
         contentType: 'image',
         mediaPath: null,
         mediaMime: 'image/jpeg',
         mediaSize: null,
-        mediaWidth: Number.isFinite(msg.photo?.w) ? msg.photo.w : null,
-        mediaHeight: Number.isFinite(msg.photo?.h) ? msg.photo.h : null,
-        rawMeta: baseMeta,
+        mediaWidth,
+        mediaHeight,
+        meta: mediaMeta,
+        rawMeta: mediaMeta,
       };
     }
   }
@@ -124,6 +129,19 @@ class TelegramUserIngestor {
         }))
       : [];
 
+    const replyToId = replyToMsgId ? `tg:${chatId}:${replyToMsgId}` : null;
+    const metaObj = {
+      id: msg.id,
+      chat_id: chatId,
+      topic_id: topicId,
+      forum_topic: forumTopic,
+      topic_title: actionTopicTitle,
+      reply_to_id: replyToId,
+      reply_to_msg_id: replyToMsgId,
+      reply_to_top_id: msg.replyTo?.replyToTopId || null,
+      entities,
+    };
+
     return {
       id: `tg:${chatId}:${msg.id}`,
       source: 'telegram',
@@ -133,7 +151,8 @@ class TelegramUserIngestor {
       senderId: fromId,
       senderName: msg.sender?.firstName || msg.sender?.username || null,
       senderRole: 'user',
-      replyToId: replyToMsgId ? `tg:${chatId}:${replyToMsgId}` : null,
+      replyToId,
+      parentId: replyToId,
       content: msg.message || '[media]',
       contentType: msg.message ? 'text' : 'other',
       timestamp: (() => {
@@ -144,16 +163,8 @@ class TelegramUserIngestor {
         const parsed = new Date(msg.date).getTime();
         return Number.isFinite(parsed) ? parsed : Date.now();
       })(),
-      rawMeta: {
-        id: msg.id,
-        chat_id: chatId,
-        topic_id: topicId,
-        forum_topic: forumTopic,
-        topic_title: actionTopicTitle,
-        reply_to_msg_id: replyToMsgId,
-        reply_to_top_id: msg.replyTo?.replyToTopId || null,
-        entities,
-      },
+      meta: metaObj,
+      rawMeta: metaObj,
     };
   }
 
