@@ -117,7 +117,7 @@ class ClaudeCodeIngestor {
 
       const extracted = await this.#extractContent(record, { encodedProject, sessionId });
       if (!extracted) continue; // tool-result-only turn — nothing to store
-      const { content, contentType, mediaPath, mediaMime, mediaSize } = extracted;
+      const { content, chatContent, contentType, mediaPath, mediaMime, mediaSize } = extracted;
       const timestamp = this.#parseTimestamp(record.timestamp);
 
       this.db.insertMessage({
@@ -145,6 +145,7 @@ class ClaudeCodeIngestor {
           cwd: record.cwd || null,
           git_branch: record.gitBranch || null,
           model: record.message?.model || null,
+          chat_content: chatContent ?? undefined,
         }),
       });
       count++;
@@ -198,6 +199,7 @@ class ClaudeCodeIngestor {
           // Also detect Claude Code's file-based image references:
           //   text blocks with content "[Image: source: /path/to/image-cache/...]"
           const parts = [];
+          const chatParts = []; // text-only, no tool_result
           for (const p of inner) {
             if (p.type === 'text' && p.text) {
               const imageRef = p.text.match(/^\[Image: source: (.+\.(?:png|jpg|jpeg|gif|webp))\]$/i);
@@ -211,13 +213,14 @@ class ClaudeCodeIngestor {
                 }
               }
               parts.push(p.text);
+              chatParts.push(p.text);
             } else if (p.type === 'tool_result') {
               const resultText = this.#extractToolResultText(p);
               if (resultText) parts.push(`[tool_result]\n${resultText}`);
             }
           }
           if (parts.length === 0) return null; // tool-result-only turn, skip
-          return { content: parts.join('\n'), contentType: 'text' };
+          return { content: parts.join('\n'), chatContent: chatParts.join('\n') || null, contentType: 'text' };
         }
       }
       return { content: '[user message]', contentType: 'text' };
@@ -228,14 +231,20 @@ class ClaudeCodeIngestor {
         const inner = msg.content;
         if (Array.isArray(inner)) {
           const parts = [];
+          const chatParts = []; // text-only, no tool_use
           for (const block of inner) {
             if (block.type === 'text' && block.text) {
               parts.push(block.text);
+              chatParts.push(block.text);
             } else if (block.type === 'tool_use' && block.name) {
               parts.push(this.#formatToolUse(block));
             }
           }
-          return { content: parts.join('\n') || '[assistant message]', contentType: 'text' };
+          return {
+            content: parts.join('\n') || '[assistant message]',
+            chatContent: chatParts.join('\n') || null,
+            contentType: 'text',
+          };
         }
         if (typeof inner === 'string') return { content: inner, contentType: 'text' };
       }

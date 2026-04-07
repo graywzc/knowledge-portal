@@ -53,6 +53,7 @@
     .layer-header-actions { display: flex; align-items: center; gap: 8px; }
     .header-icon-btn { border: 1px solid #cfd6e6; background: #fff; color: #243b63; border-radius: 8px; padding: 6px 10px; font-size: 14px; cursor: pointer; }
     .header-icon-btn:hover { background: #eef4ff; }
+    .header-icon-btn.active { background: #4a6cf7; color: #fff; border-color: #4a6cf7; }
     #topic-search-panel { display: none; flex-direction: column; gap: 8px; min-width: 0; }
     #topic-search-panel.open { display: flex; }
     .topic-search-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -111,6 +112,7 @@
     body.dark .header-icon-btn:hover,
     body.dark .topic-search-btn:hover,
     body.dark .topic-search-result:hover { background: #243047; }
+    body.dark .header-icon-btn.active { background: #4a6cf7; color: #fff; border-color: #4a6cf7; }
     body.dark .topic-search-result.active { background: #2a3d5c; border-color: #8fb0ff; }
     body.dark #topic-search-input { background: #0f1115; color: #e8eaed; border-color: #2f3644; }
     body.dark #topic-search-count,
@@ -213,6 +215,7 @@
       <div class="layer-header-row">
         <div id="layer-header-title" class="layer-header-title">Knowledge Portal</div>
         <div class="layer-header-actions">
+          <button id="chat-only-toggle" class="header-icon-btn" type="button" aria-label="Toggle chat-only view" title="Hide tool calls">💬</button>
           <button id="topic-search-toggle" class="header-icon-btn" type="button" aria-label="Search topic">🔍</button>
         </div>
       </div>
@@ -273,6 +276,7 @@
     let isResizingSidebar = false;
     let currentTopicName = '';
     let currentLayerUuid = '';
+    let chatOnlyMode = localStorage.getItem('chatOnlyMode') !== 'false';
     let pendingImages = [];
     let currentTopicDeletedAt = null;
     let currentTopicChatId = null;
@@ -1668,10 +1672,15 @@
       }
 
       layer.messages.forEach((m) => {
+        // In chat-only mode, skip messages that are entirely tool content (no chat text)
+        if (chatOnlyMode && m.chatContent === null && m.contentType !== 'image') return;
+
+        const displayContent = (chatOnlyMode && m.chatContent != null) ? m.chatContent : m.content;
+
         const el = document.createElement('div');
         el.className = `msg ${m.sender}`;
         el.setAttribute('data-msg-id', m.id);
-        el.setAttribute('data-msg-preview', String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 80));
+        el.setAttribute('data-msg-preview', String(displayContent || '').replace(/\s+/g, ' ').trim().slice(0, 80));
         el.setAttribute('data-msg-sender', m.sender);
         let html = '';
 
@@ -1684,11 +1693,11 @@
           if (mediaUrl) {
             html += `<img class="media-image" src="${escapeHtml(mediaUrl)}" alt="image ${escapeHtml(getShortChatId(m.id))}" loading="lazy" />`;
           }
-          if (m.content && m.content !== '[media]') {
-            html += `<div class="media-caption">${renderRichContent(m.content, m.entities, { highlightQuery: messageHighlightQuery })}</div>`;
+          if (displayContent && displayContent !== '[media]') {
+            html += `<div class="media-caption">${renderRichContent(displayContent, m.entities, { highlightQuery: messageHighlightQuery })}</div>`;
           }
         } else {
-          html += renderRichContent(m.content, m.entities, { highlightQuery: messageHighlightQuery });
+          html += renderRichContent(displayContent, m.entities, { highlightQuery: messageHighlightQuery });
         }
 
         html += `<div class="meta">${m.sender}`;
@@ -2129,6 +2138,17 @@
       }
     });
 
+    function applyChatOnlyToggle() {
+      const btn = document.getElementById('chat-only-toggle');
+      if (btn) btn.classList.toggle('active', chatOnlyMode);
+      if (currentLayerUuid) showLayer(currentLayerUuid, null, { scrollMode: 'preserve' });
+    }
+    applyChatOnlyToggle();
+    document.getElementById('chat-only-toggle').onclick = () => {
+      chatOnlyMode = !chatOnlyMode;
+      try { localStorage.setItem('chatOnlyMode', String(chatOnlyMode)); } catch (_) {}
+      applyChatOnlyToggle();
+    };
     document.getElementById('topic-search-toggle').onclick = () => {
       setTopicSearchOpen(!topicSearchOpen);
       if (topicSearchOpen) {
