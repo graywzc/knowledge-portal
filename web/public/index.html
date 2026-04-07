@@ -1672,8 +1672,12 @@
       }
 
       layer.messages.forEach((m) => {
-        // In chat-only mode, skip messages that are entirely tool content (no chat text)
-        if (chatOnlyMode && m.chatContent === null && m.contentType !== 'image') return;
+        // In chat-only mode, skip messages that are entirely tool content (no chat text).
+        // chatContent===null means tool-only for newly-ingested messages; for older messages
+        // that predate chat_content in meta, fall back to a content-pattern check so we
+        // don't accidentally hide real chat messages.
+        const looksToolOnly = /^\[tool[_:]/.test((m.content || '').trimStart());
+        if (chatOnlyMode && m.chatContent === null && looksToolOnly && m.contentType !== 'image') return;
 
         const displayContent = (chatOnlyMode && m.chatContent != null) ? m.chatContent : m.content;
 

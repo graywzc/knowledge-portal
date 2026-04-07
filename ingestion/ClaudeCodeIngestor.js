@@ -172,11 +172,11 @@ class ClaudeCodeIngestor {
     const msg = record.message;
 
     if (record.type === 'user') {
-      if (typeof msg === 'string') return { content: msg, contentType: 'text' };
+      if (typeof msg === 'string') return { content: msg, chatContent: msg, contentType: 'text' };
       if (typeof msg === 'object' && msg !== null) {
         // May be { role, content: string|array }
         const inner = msg.content;
-        if (typeof inner === 'string') return { content: inner, contentType: 'text' };
+        if (typeof inner === 'string') return { content: inner, chatContent: inner, contentType: 'text' };
         if (Array.isArray(inner)) {
           const imageBlocks = inner.filter(p => p.type === 'image');
 
@@ -246,9 +246,9 @@ class ClaudeCodeIngestor {
             contentType: 'text',
           };
         }
-        if (typeof inner === 'string') return { content: inner, contentType: 'text' };
+        if (typeof inner === 'string') return { content: inner, chatContent: inner, contentType: 'text' };
       }
-      if (typeof msg === 'string') return { content: msg, contentType: 'text' };
+      if (typeof msg === 'string') return { content: msg, chatContent: msg, contentType: 'text' };
       return { content: '[assistant message]', contentType: 'text' };
     }
 
