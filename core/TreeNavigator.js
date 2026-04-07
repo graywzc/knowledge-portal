@@ -174,6 +174,7 @@ class TreeNavigator {
       id: msg.id,
       sender: msg.sender,
       content: msg.content,
+      chatContent: msg.chatContent ?? null,
       contentType: msg.contentType || 'text',
       mediaPath: msg.mediaPath || meta.media_path || null,
       mediaMime: msg.mediaMime || meta.media_mime || null,

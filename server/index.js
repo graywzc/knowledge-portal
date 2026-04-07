@@ -79,6 +79,7 @@ function buildTree(source, channel) {
       replyToId: parentId,
       branched,
       content: msg.content,
+      chatContent: parsedMeta?.chat_content ?? null,
       contentType: msg.content_type || 'text',
       mediaPath: msg.media_path || parsedMeta?.media_path || null,
       mediaMime: msg.media_mime || parsedMeta?.media_mime || null,
