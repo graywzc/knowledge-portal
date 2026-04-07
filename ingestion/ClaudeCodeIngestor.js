@@ -231,16 +231,18 @@ class ClaudeCodeIngestor {
         const inner = msg.content;
         if (Array.isArray(inner)) {
           const parts = [];
-          const chatParts = []; // text-only, no tool_use
+          const chatParts = []; // text-only, no tool_use or thinking
           for (const block of inner) {
             if (block.type === 'text' && block.text) {
               parts.push(block.text);
               chatParts.push(block.text);
             } else if (block.type === 'tool_use' && block.name) {
               parts.push(this.#formatToolUse(block));
+            } else if (block.type === 'thinking' && block.thinking) {
+              parts.push(`[thinking]\n${block.thinking}`);
             }
           }
-          if (parts.length === 0) return null; // thinking-only or unknown-block-only turn, skip
+          if (parts.length === 0) return null; // unknown-block-only turn, skip
           return {
             content: parts.join('\n'),
             chatContent: chatParts.join('\n') || null,
