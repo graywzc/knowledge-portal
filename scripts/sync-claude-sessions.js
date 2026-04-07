@@ -49,7 +49,7 @@ async function main() {
     } else if (fs.existsSync(entry)) {
       // Treat as sync root: enumerate {hostname}/ subdirs
       const subdirs = fs.readdirSync(entry, { withFileTypes: true })
-        .filter(d => d.isDirectory())
+        .filter(d => d.isDirectory() && !d.name.endsWith('-image-cache'))
         .map(d => d.name);
       for (const hostname of subdirs) {
         sources.push({ hostname, projectsRoot: path.join(entry, hostname), imageCacheRoot: path.join(entry, hostname + '-image-cache') });

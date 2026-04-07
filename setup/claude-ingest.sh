@@ -29,4 +29,5 @@ fi
 # Ingest all sources (local machine always included by sync-claude-sessions.js)
 CLAUDE_SOURCES="${SYNC_ROOT}" \
   DB_PATH="${DB_PATH:-/Users/graywzc/projects/knowledge-portal/data/portal.db}" \
+  MEDIA_ROOT="${KP_DIR}/media" \
   /opt/homebrew/bin/node "${KP_DIR}/scripts/sync-claude-sessions.js"
