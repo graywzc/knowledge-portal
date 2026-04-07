@@ -240,8 +240,9 @@ class ClaudeCodeIngestor {
               parts.push(this.#formatToolUse(block));
             }
           }
+          if (parts.length === 0) return null; // thinking-only or unknown-block-only turn, skip
           return {
-            content: parts.join('\n') || '[assistant message]',
+            content: parts.join('\n'),
             chatContent: chatParts.join('\n') || null,
             contentType: 'text',
           };
@@ -249,7 +250,7 @@ class ClaudeCodeIngestor {
         if (typeof inner === 'string') return { content: inner, chatContent: inner, contentType: 'text' };
       }
       if (typeof msg === 'string') return { content: msg, chatContent: msg, contentType: 'text' };
-      return { content: '[assistant message]', contentType: 'text' };
+      return null; // unrecognised message shape, skip
     }
 
     return { content: '[message]', contentType: 'text' };
