@@ -11,10 +11,12 @@
     "mtproto:once": "node --env-file=${ENV_FILE:-.env} scripts/mtproto-sync.js once",
     "mtproto:loop": "node --env-file=${ENV_FILE:-.env} --watch scripts/mtproto-sync.js loop",
     "mtproto:reset-last-id": "node --env-file=${ENV_FILE:-.env} scripts/reset-last-id.js",
-    "dev:all": "concurrently -n APP,INGEST,CLAUDE -c blue,green,cyan \"npm run app:watch\" \"npm run mtproto:loop\" \"npm run claude:sync:loop\"",
+    "dev:all": "concurrently -n APP,INGEST,CLAUDE,CODEX -c blue,green,cyan,magenta \"npm run app:watch\" \"npm run mtproto:loop\" \"npm run claude:sync:loop\" \"npm run codex:sync:loop\"",
     "prod:all": "concurrently -n APP,INGEST -c blue,green \"npm run app:start\" \"npm run mtproto:loop\"",
     "claude:sync": "node --env-file=${ENV_FILE:-.env} scripts/sync-claude-sessions.js",
     "claude:sync:loop": "while true; do node --env-file=${ENV_FILE:-.env} scripts/sync-claude-sessions.js; sleep 300; done",
+    "codex:sync": "node --env-file=${ENV_FILE:-.env} scripts/sync-codex-sessions.js",
+    "codex:sync:loop": "while true; do node --env-file=${ENV_FILE:-.env} scripts/sync-codex-sessions.js; sleep 300; done",
     "test": "jest",
     "test:coverage": "jest --coverage"
   },

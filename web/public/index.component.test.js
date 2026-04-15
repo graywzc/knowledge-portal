@@ -83,6 +83,8 @@ function buildFetchMock({ view = makeView(), channels = [{ id: '55', name: 'Topi
     if (u.includes('/api/topics/') && u.endsWith('/archive') && opts.method === 'POST') return { json: async () => ({ ok: true }) };
     if (u.includes('/api/claude/topics')) return { json: async () => [] };
     if (u.endsWith('/api/claude/projects')) return { json: async () => [] };
+    if (u.includes('/api/codex/topics')) return { json: async () => [] };
+    if (u.endsWith('/api/codex/projects')) return { json: async () => [] };
 
     throw new Error(`Unexpected fetch URL: ${u}`);
   });
@@ -849,6 +851,7 @@ describe('web component behavior (index.html)', () => {
     const fetchMock = jest.fn()
       .mockResolvedValueOnce({ json: async () => [{ id: '55', chatId: '-1003826585913', topicUUID: 'topic:telegram:-100:55', name: '[V1] Tennis Social Media App', messageCount: 2, deletedAt: null, archived: false, updatedAt: Date.now() }] })
       .mockResolvedValueOnce({ json: async () => [] })  // /api/claude/projects
+      .mockResolvedValueOnce({ json: async () => [] })  // /api/codex/projects
       .mockResolvedValueOnce({ json: async () => firstView })
       .mockResolvedValueOnce({ json: async () => ({ ok: true, layers: {} }) })
       .mockResolvedValueOnce({ json: async () => secondView })

@@ -129,6 +129,18 @@ app.get('/api/claude/projects', (req, res) => {
   res.json(db.getClaudeProjects());
 });
 
+/** List Codex sessions (optionally filtered by encodedProject) */
+app.get('/api/codex/topics', (req, res) => {
+  const limit = Number(req.query.limit) || 100;
+  const encodedProject = req.query.encodedProject || null;
+  res.json(db.getCodexTopics({ limit, encodedProject }));
+});
+
+/** List Codex projects (aggregated from sessions) */
+app.get('/api/codex/projects', (req, res) => {
+  res.json(db.getCodexProjects());
+});
+
 /** Search topics by title (read-only) */
 app.post('/api/search/topics', (req, res) => {
   try {

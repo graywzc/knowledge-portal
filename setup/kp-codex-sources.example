@@ -1,0 +1,7 @@
+# ~/.kp-codex-sources - one Tailscale hostname per line
+# These are remote machines whose ~/.codex/sessions/ and ~/.codex/session_index.jsonl
+# will be rsynced to this machine.
+#
+# If this file does not exist, setup/claude-ingest.sh reuses ~/.kp-claude-sources.
+
+mba

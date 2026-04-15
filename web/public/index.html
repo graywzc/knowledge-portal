@@ -289,7 +289,7 @@
     let hoveredPane = null;
     let topicsViewMode = 'active'; // active | archived
     let viewState = null;
-    let currentClaudeSessions = []; // sessions for the currently selected Claude project
+    let currentCodeSessions = []; // sessions for the currently selected code-agent project
     let topicSearchOpen = false;
     let topicSearchQuery = '';
     let topicSearchResults = [];
@@ -966,14 +966,14 @@
       await loadChannels('telegram');
     }
 
-    /** Populate #tree with sessions for the given Claude project, as layer rows. */
-    async function selectClaudeProject(project) {
+    /** Populate #tree with sessions for the given code-agent project, as layer rows. */
+    async function selectCodeAgentProject(source, project) {
       // Mark this project row active in topic list
       document.querySelectorAll('#topic-list .tree-node.active').forEach(r => r.classList.remove('active'));
-      const projectRow = document.querySelector(`#topic-list .tree-node[data-claude-project="${CSS.escape(project.key)}"]`);
+      const projectRow = document.querySelector(`#topic-list .tree-node[data-code-source="${CSS.escape(source)}"][data-code-project="${CSS.escape(project.key)}"]`);
       if (projectRow) projectRow.classList.add('active');
 
-      currentSource = 'claude';
+      currentSource = source;
       currentTopicUUID = null;
       currentChannel = null;
       currentTopicName = project.projectName || project.encodedProject || '';
@@ -986,20 +986,20 @@
 
       let sessions;
       try {
-        sessions = await api('GET', `/claude/topics?encodedProject=${encodeURIComponent(project.encodedProject)}&limit=200`);
+        sessions = await api('GET', `/${source}/topics?encodedProject=${encodeURIComponent(project.encodedProject)}&limit=200`);
       } catch (_) {
         tree.innerHTML = '';
         return;
       }
-      currentClaudeSessions = sessions || [];
-      renderClaudeSessionsInTree();
+      currentCodeSessions = sessions || [];
+      renderCodeSessionsInTree();
     }
 
-    /** Render currentClaudeSessions into #tree, highlighting the active session. */
-    function renderClaudeSessionsInTree() {
+    /** Render currentCodeSessions into #tree, highlighting the active session. */
+    function renderCodeSessionsInTree() {
       const tree = document.getElementById('tree');
       tree.innerHTML = '';
-      for (const s of currentClaudeSessions) {
+      for (const s of currentCodeSessions) {
         const row = document.createElement('div');
         row.className = 'tree-node' + (s.topicUUID === currentTopicUUID ? ' active' : '');
         row.setAttribute('data-layer-id', s.topicUUID);
@@ -1023,7 +1023,7 @@
         row.appendChild(meta);
 
         row.onclick = async () => {
-          currentSource = 'claude';
+          currentSource = s.source || currentSource;
           currentTopicUUID = s.topicUUID;
           currentChannel = s.sessionId;
           currentTopicName = s.name || '';
@@ -1224,7 +1224,7 @@
           row.appendChild(label);
 
           row.onclick = async () => {
-            currentClaudeSessions = [];
+            currentCodeSessions = [];
             currentSource = 'telegram';
             currentChannel = t.id;
             currentTopicUUID = t.topicUUID ? String(t.topicUUID) : '';
@@ -1252,27 +1252,34 @@
         });
         updateTopicWipUI();
 
-        // Append Claude projects below Telegram topics
-        let projects = [];
-        try { projects = await api('GET', '/claude/projects'); } catch (_) {}
-        if (Array.isArray(projects) && projects.length > 0) {
-          const divider = document.createElement('div');
-          divider.className = 'topic-section-label';
-          divider.textContent = 'CLAUDE';
-          topicList.appendChild(divider);
+        // Append code-agent projects below Telegram topics
+        const agentSections = [
+          { source: 'claude', label: 'CLAUDE' },
+          { source: 'codex', label: 'CODEX' },
+        ];
+        for (const section of agentSections) {
+          let projects = [];
+          try { projects = await api('GET', `/${section.source}/projects`); } catch (_) {}
+          if (Array.isArray(projects) && projects.length > 0) {
+            const divider = document.createElement('div');
+            divider.className = 'topic-section-label';
+            divider.textContent = section.label;
+            topicList.appendChild(divider);
 
-          for (const p of projects) {
-            const row = document.createElement('div');
-            row.className = 'tree-node';
-            row.setAttribute('data-claude-project', p.key);
+            for (const p of projects) {
+              const row = document.createElement('div');
+              row.className = 'tree-node';
+              row.setAttribute('data-code-source', section.source);
+              row.setAttribute('data-code-project', p.key);
 
-            const label = document.createElement('span');
-            label.className = 'topic-label';
-            label.textContent = `${p.projectName || p.encodedProject} (${p.sessionCount})`;
-            row.appendChild(label);
+              const label = document.createElement('span');
+              label.className = 'topic-label';
+              label.textContent = `${p.projectName || p.encodedProject} (${p.sessionCount})`;
+              row.appendChild(label);
 
-            row.onclick = () => selectClaudeProject(p);
-            topicList.appendChild(row);
+              row.onclick = () => selectCodeAgentProject(section.source, p);
+              topicList.appendChild(row);
+            }
           }
         }
         return;
@@ -1567,8 +1574,8 @@
     }
 
     function renderCurrentTree() {
-      if (currentSource === 'claude' && currentClaudeSessions.length > 0) {
-        renderClaudeSessionsInTree();
+      if ((currentSource === 'claude' || currentSource === 'codex') && currentCodeSessions.length > 0) {
+        renderCodeSessionsInTree();
       } else if (viewState?.tree) {
         renderTree(viewState.tree);
       }
