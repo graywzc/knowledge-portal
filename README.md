@@ -62,7 +62,18 @@ Use this to inspect the exact MTProto payload for a specific message id (helpful
 node scripts/fetch-telegram-msg.js -1003826585913 1623
 ```
 
-### D) Debug utility: inspect stored messages in SQLite
+### D) Claude Code and Codex session sync
+Use these to ingest local code-agent sessions as KP topics grouped by project.
+
+```bash
+npm run claude:sync
+npm run codex:sync
+```
+
+Claude reads `~/.claude/projects`; Codex reads `~/.codex/sessions` and `~/.codex/session_index.jsonl`.
+For remote mirrors, use `CLAUDE_SOURCES` or `CODEX_SOURCES` with the matching sync script.
+
+### E) Debug utility: inspect stored messages in SQLite
 Use this to verify whether a Telegram message id exists in KP storage and inspect its row.
 
 For the local dev app, messages are typically stored in `data/dev.db`.
@@ -85,7 +96,7 @@ Inspect full raw metadata for one row:
 sqlite3 data/dev.db "SELECT id, raw_meta FROM messages WHERE id = 'tg:-1003826585913:1623';"
 ```
 
-### E) Debug utility: test Telegram sendText from CLI
+### F) Debug utility: test Telegram sendText from CLI
 Sends a real Telegram message using `TelegramSender`.
 
 ```bash

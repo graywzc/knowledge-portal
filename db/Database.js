@@ -159,6 +159,10 @@ class Database {
     return uuidv5(`claude:${hostname}:${encodedProject}:${sessionId}:${messageUuid}`);
   }
 
+  static codexMessageId(hostname, encodedProject, sessionId, eventId) {
+    return uuidv5(`codex:${hostname}:${encodedProject}:${sessionId}:${eventId}`);
+  }
+
   // --- Messages ---
 
   insertMessage(msg) {
@@ -333,7 +337,7 @@ class Database {
     return this.#topicsHasLegacyPk() ? 'topic_uuid' : 'id';
   }
 
-  upsertTopic({ id, name, meta, parentTopicId, updatedAt } = {}) {
+  upsertTopic({ id, source = 'claude', name, meta, parentTopicId, updatedAt } = {}) {
     const now = Date.now();
     const ts = updatedAt || now;
     const metaStr = meta ? (typeof meta === 'string' ? meta : JSON.stringify(meta)) : null;
@@ -341,8 +345,8 @@ class Database {
       // Legacy DB: topics keyed by topic_uuid. Use id as topic_uuid.
       this.db.prepare(
         `INSERT OR IGNORE INTO topics(topic_uuid, source, name, meta, parent_topic_id, archived, deleted_at, created_at, updated_at)
-         VALUES(?, 'claude', ?, ?, ?, 0, NULL, ?, ?)`
-      ).run(id, name || null, metaStr, parentTopicId || null, now, ts);
+         VALUES(?, ?, ?, ?, ?, 0, NULL, ?, ?)`
+      ).run(id, String(source), name || null, metaStr, parentTopicId || null, now, ts);
       this.db.prepare(
         `UPDATE topics SET name = COALESCE(?, name), updated_at = ? WHERE topic_uuid = ?`
       ).run(name || null, ts, id);
@@ -358,11 +362,11 @@ class Database {
   }
 
   /** Set topics.updated_at = MAX(messages.timestamp) for the given session. */
-  touchTopicTimestamp(topicId, sessionId) {
+  touchTopicTimestamp(topicId, sessionId, source = 'claude') {
     const pkCol = this.#legacyTopicPkCol();
     const row = this.db.prepare(
-      `SELECT MAX(timestamp) AS max_ts FROM messages WHERE source = 'claude' AND topic_id = ?`
-    ).get(sessionId);
+      `SELECT MAX(timestamp) AS max_ts FROM messages WHERE source = ? AND topic_id = ?`
+    ).get(String(source), sessionId);
     const maxTs = row?.max_ts;
     if (!maxTs) return;
     this.db.prepare(
@@ -455,6 +459,27 @@ class Database {
         deletedAt: topic.deleted_at ? Number(topic.deleted_at) : null,
       };
     }
+    if (src === 'codex') {
+      const sessionId = topic.meta?.session_id || null;
+      if (!sessionId) return null;
+      return {
+        topicUUID: String(topic.topic_uuid || topic.id),
+        source: 'codex',
+        name: topic.name || null,
+        locator: {
+          channel: sessionId,
+          sessionId,
+          hostname: topic.meta?.hostname || null,
+          encodedProject: topic.meta?.encoded_project || null,
+          cwd: topic.meta?.cwd || null,
+          gitBranch: topic.meta?.git_branch || null,
+        },
+        createdAt: topic.created_at ? Number(topic.created_at) : null,
+        updatedAt: topic.updated_at ? Number(topic.updated_at) : null,
+        archived: !!topic.archived,
+        deletedAt: topic.deleted_at ? Number(topic.deleted_at) : null,
+      };
+    }
     return null;
   }
 
@@ -524,17 +549,26 @@ class Database {
   }
 
   getClaudeTopics({ limit = 100, encodedProject = null } = {}) {
+    return this.getCodeAgentTopics({ source: 'claude', limit, encodedProject });
+  }
+
+  getCodexTopics({ limit = 100, encodedProject = null } = {}) {
+    return this.getCodeAgentTopics({ source: 'codex', limit, encodedProject });
+  }
+
+  getCodeAgentTopics({ source, limit = 100, encodedProject = null } = {}) {
+    const normalizedSource = String(source || 'claude');
     const pkCol = this.#legacyTopicPkCol();
     const hasLegacySrc = this.#topicsHasLegacyPk(); // legacy schema has source as a column
     const sourceFilter = hasLegacySrc
-      ? `source = 'claude'`
-      : `json_extract(meta, '$.source') = 'claude'`;
+      ? `source = ?`
+      : `json_extract(meta, '$.source') = ?`;
     const projectFilter = encodedProject
       ? `AND json_extract(meta, '$.encoded_project') = ?`
       : '';
     const params = encodedProject
-      ? [encodedProject, Number(limit) || 100]
-      : [Number(limit) || 100];
+      ? [normalizedSource, encodedProject, Number(limit) || 100]
+      : [normalizedSource, Number(limit) || 100];
     const rows = this.db.prepare(
       `SELECT ${pkCol} AS topic_uuid, name, meta, created_at, updated_at
        FROM topics
@@ -550,13 +584,14 @@ class Database {
       try { meta = row.meta ? JSON.parse(row.meta) : null; } catch {}
       const sessionId = meta?.session_id || null;
       const msgCount = sessionId
-        ? (this.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE source='claude' AND topic_id=?`).get(sessionId)?.c || 0)
+        ? (this.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE source=? AND topic_id=?`).get(normalizedSource, sessionId)?.c || 0)
         : 0;
       const projectName = meta?.cwd
         ? meta.cwd.split('/').filter(Boolean).pop()
         : (meta?.encoded_project || '').split('-').filter(Boolean).pop() || null;
       return {
         topicUUID: String(row.topic_uuid),
+        source: normalizedSource,
         name: row.name || sessionId?.slice(0, 8) || 'Session',
         sessionId,
         hostname: meta?.hostname || null,
@@ -573,7 +608,16 @@ class Database {
 
   /** Aggregate Claude sessions into project summaries, ordered by most recently active. */
   getClaudeProjects() {
-    const sessions = this.getClaudeTopics({ limit: 1000 });
+    return this.getCodeAgentProjects({ source: 'claude' });
+  }
+
+  /** Aggregate Codex sessions into project summaries, ordered by most recently active. */
+  getCodexProjects() {
+    return this.getCodeAgentProjects({ source: 'codex' });
+  }
+
+  getCodeAgentProjects({ source } = {}) {
+    const sessions = this.getCodeAgentTopics({ source: String(source || 'claude'), limit: 1000 });
     const projectMap = new Map();
     for (const s of sessions) {
       const key = `${s.hostname}:${s.encodedProject}`;
